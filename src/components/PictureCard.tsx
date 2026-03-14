@@ -1,0 +1,75 @@
+import { useState, useEffect } from "react";
+import { motion } from "framer-motion";
+
+interface Props {
+  label: string;
+  image: string;
+  onGazeSelect?: () => void;
+}
+
+const PictureCard = ({ label, image, onGazeSelect }: Props) => {
+  const [gazeTime, setGazeTime] = useState(0);
+  const [isHovering, setIsHovering] = useState(false);
+  const selected = gazeTime >= 1200;
+
+  useEffect(() => {
+    if (!isHovering) {
+      setGazeTime(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setGazeTime((prev) => {
+        if (prev >= 1200) {
+          onGazeSelect?.();
+          return 1200;
+        }
+        return prev + 50;
+      });
+    }, 50);
+    return () => clearInterval(interval);
+  }, [isHovering, onGazeSelect]);
+
+  return (
+    <motion.div
+      className={`relative bg-card rounded-2xl p-4 flex flex-col items-center justify-center gap-2 card-shadow cursor-pointer transition-all duration-300 ${
+        selected ? "gaze-ring" : ""
+      }`}
+      whileHover={{ scale: 1.03 }}
+      whileTap={{ scale: 0.97 }}
+      onMouseEnter={() => setIsHovering(true)}
+      onMouseLeave={() => setIsHovering(false)}
+      onClick={() => onGazeSelect?.()}
+    >
+      <img src={image} alt={label} className="w-20 h-20 object-contain" />
+      <span className="text-sm font-extrabold text-foreground uppercase tracking-wide">
+        {label}
+      </span>
+
+      {isHovering && !selected && (
+        <motion.div
+          className="absolute bottom-0 left-0 right-0 h-1 rounded-b-2xl overflow-hidden"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+        >
+          <div
+            className="h-full bg-gaze-glow rounded-b-2xl transition-all duration-100"
+            style={{ width: `${(gazeTime / 1200) * 100}%` }}
+          />
+        </motion.div>
+      )}
+
+      {selected && (
+        <motion.div
+          className="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-primary flex items-center justify-center"
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          transition={{ type: "spring", stiffness: 400 }}
+        >
+          <span className="text-primary-foreground text-xs font-bold">✓</span>
+        </motion.div>
+      )}
+    </motion.div>
+  );
+};
+
+export default PictureCard;
