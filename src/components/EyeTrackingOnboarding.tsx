@@ -32,12 +32,88 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
   const [demoCardActive, setDemoCardActive] = useState<number | null>(null);
   const [demoGazeTime, setDemoGazeTime] = useState(0);
 
-  // Step 0: Welcome
-  // Step 1: Calibration (follow the dots)
-  // Step 2: Demo - gaze at cards
-  // Step 3: Complete
+  // ESTADOS NOVOS PARA GERENCIAR OS MODOS
+  const [trackingMode, setTrackingMode] = useState<'mouse' | 'camera' | null>(null);
+  const [lookingAt, setLookingAt] = useState<string | null>(null);
+  const [isInitializingCamera, setIsInitializingCamera] = useState(false);
 
-  // Calibration gaze timer
+  // Função para iniciar o modo Câmera
+  const startCameraMode = async () => {
+    setIsInitializingCamera(true);
+    setTrackingMode('camera');
+
+    const initWebGazer = async () => {
+      const webgazer = (window as any).webgazer;
+      if (!webgazer) return;
+
+      await webgazer.setRegression('ridge')
+        .setGazeListener((data: any) => {
+          if (data) {
+            const el = document.elementFromPoint(data.x, data.y);
+            const target = el?.closest('[data-target]')?.getAttribute('data-target');
+            setLookingAt(target || null);
+          }
+        })
+        .begin();
+
+      webgazer.showVideoPreview(true).showPredictionPoints(true);
+      setIsInitializingCamera(false);
+      setStep(1); // Avança para calibração
+    };
+
+    const script = document.createElement('script');
+    script.src = "https://webgazer.cs.brown.edu/webgazer.js";
+    script.async = true;
+    script.onload = initWebGazer;
+    document.body.appendChild(script);
+  };
+
+  // Função para iniciar o modo Mouse
+  const startMouseMode = () => {
+    setTrackingMode('mouse');
+    setStep(1);
+  };
+
+  // Limpa o WebGazer se o componente for desmontado
+  useEffect(() => {
+    return () => {
+      const webgazer = (window as any).webgazer;
+      if (webgazer) {
+        webgazer.end();
+        const videoContainer = document.getElementById('webgazerVideoContainer');
+        if (videoContainer) videoContainer.remove();
+      }
+    };
+  }, []);
+
+  // LÓGICA DA CÂMERA: Atualiza os estados baseado para onde o usuário olha
+  useEffect(() => {
+    if (trackingMode !== 'camera') return;
+
+    if (step === 1) {
+      if (lookingAt === `dot-${activeDot}`) {
+        setIsHovering(true);
+      } else {
+        setIsHovering(false);
+      }
+    }
+
+    if (step === 2) {
+      if (lookingAt?.startsWith('card-')) {
+        const idx = parseInt(lookingAt.split('-')[1]);
+        setDemoCardActive(idx);
+      } else {
+        setDemoCardActive(null);
+      }
+
+      if (lookingAt === 'continue-btn') {
+        setTimeout(() => setStep(3), 800);
+      }
+    }
+  }, [lookingAt, step, activeDot, trackingMode]);
+
+
+  // LÓGICA DOS TEMPORIZADORES (Intacta do seu código original)
   useEffect(() => {
     if (step !== 1 || !isHovering) {
       setGazeTime(0);
@@ -59,14 +135,12 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
     return () => clearInterval(interval);
   }, [step, isHovering, activeDot]);
 
-  // Check calibration complete
   useEffect(() => {
     if (dotsCompleted.length === 4 && step === 1) {
       setTimeout(() => setStep(2), 600);
     }
   }, [dotsCompleted, step]);
 
-  // Demo card gaze timer
   useEffect(() => {
     if (step !== 2 || demoCardActive === null) {
       setDemoGazeTime(0);
@@ -99,7 +173,8 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
 
   return (
     <div className="fixed inset-0 z-40 bg-background overflow-hidden">
-      <GazeCursor />
+      {/* O GazeCursor só aparece se estiver no modo mouse para não bugar a câmera */}
+      {trackingMode !== 'camera' && <GazeCursor />}
 
       <AnimatePresence mode="wait">
         {/* STEP 0: Welcome */}
@@ -119,177 +194,96 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
               animate={{ y: [0, -8, 0] }}
               transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
             />
-            <motion.h1
-              className="text-3xl font-extrabold text-foreground"
-              initial={{ y: 20, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ delay: 0.3 }}
-            >
+            <motion.h1 className="text-3xl font-extrabold text-foreground" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
               Olá! 👋
             </motion.h1>
-            <motion.p
-              className="text-lg text-muted-foreground max-w-xs"
-              initial={{ y: 20, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ delay: 0.5 }}
-            >
-              Vamos aprender a usar o <span className="font-bold text-primary">olhar</span> para
-              escolher cartões!
-            </motion.p>
-            <motion.p
-              className="text-sm text-muted-foreground"
-              initial={{ y: 20, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ delay: 0.7 }}
-            >
-              Não clique. Apenas observe. ✨
+            <motion.p className="text-lg text-muted-foreground max-w-xs" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
+              Como você quer simular o uso do aplicativo hoje?
             </motion.p>
 
-            {/* Auto-advance or hover-to-advance */}
-            <motion.div
-              className="mt-6 px-8 py-4 rounded-2xl bg-primary/10 border-2 border-primary/30 cursor-pointer"
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 1 }}
-              whileHover={{ scale: 1.05, borderColor: "hsl(190, 60%, 30%)" }}
-              onHoverStart={() => {
-                setTimeout(() => setStep(1), 800);
-              }}
-              onClick={() => setStep(1)}
-            >
-              <p className="text-primary font-bold text-lg">
-                Olhe aqui para começar 👀
-              </p>
-            </motion.div>
+            {isInitializingCamera ? (
+               <p className="text-primary font-bold animate-pulse mt-6">Solicitando acesso à câmera...</p>
+            ) : (
+              <div className="flex flex-col gap-4 mt-4 w-full max-w-xs">
+                {/* Botão Mouse */}
+                <motion.button
+                  className="px-8 py-4 rounded-2xl bg-secondary border-2 border-secondary/50 cursor-pointer text-foreground font-bold text-lg w-full"
+                  whileHover={{ scale: 1.05 }}
+                  onClick={startMouseMode}
+                >
+                  🖱️ Usar Mouse (PC)
+                </motion.button>
+                
+                {/* Botão Câmera */}
+                <motion.button
+                  className="px-8 py-4 rounded-2xl bg-primary/10 border-2 border-primary/30 cursor-pointer text-primary font-bold text-lg w-full"
+                  whileHover={{ scale: 1.05, borderColor: "hsl(190, 60%, 30%)" }}
+                  onClick={startCameraMode}
+                >
+                  📷 Usar Câmera (Mobile)
+                </motion.button>
+              </div>
+            )}
           </motion.div>
         )}
 
         {/* STEP 1: Calibration */}
         {step === 1 && (
-          <motion.div
-            key="calibration"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="relative h-full"
-          >
+          <motion.div key="calibration" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="relative h-full">
             <div className="absolute top-8 left-0 right-0 text-center z-10">
-              <motion.p
-                className="text-lg font-bold text-foreground"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-              >
+              <motion.p className="text-lg font-bold text-foreground">
                 Calibrando sua intenção...
               </motion.p>
               <p className="text-sm text-muted-foreground mt-1">
-                Olhe para o ponto iluminado 🔵
+                {trackingMode === 'mouse' ? "Passe o mouse pelo ponto iluminado 🔵" : "Olhe para o ponto iluminado e clique nele 🔵"}
               </p>
               <div className="flex justify-center gap-2 mt-3">
                 {[0, 1, 2, 3].map((i) => (
-                  <div
-                    key={i}
-                    className={`w-3 h-3 rounded-full transition-all duration-300 ${
-                      dotsCompleted.includes(i)
-                        ? "bg-primary scale-100"
-                        : i === activeDot
-                        ? "bg-gaze-glow animate-pulse-gaze"
-                        : "bg-muted"
-                    }`}
-                  />
+                  <div key={i} className={`w-3 h-3 rounded-full transition-all duration-300 ${dotsCompleted.includes(i) ? "bg-primary scale-100" : i === activeDot ? "bg-gaze-glow animate-pulse-gaze" : "bg-muted"}`} />
                 ))}
               </div>
             </div>
 
             {CALIBRATION_DOTS.map((dot) => (
-              <motion.div
-                key={dot.id}
-                className="absolute"
-                style={{ left: dot.x, top: dot.y, transform: "translate(-50%, -50%)" }}
-                initial={{ opacity: 0, scale: 0 }}
-                animate={{
-                  opacity: dot.id === activeDot ? 1 : dotsCompleted.includes(dot.id) ? 0.3 : 0.15,
-                  scale: dot.id === activeDot ? 1 : 0.6,
-                }}
-                transition={{ type: "spring", stiffness: 300, damping: 25 }}
+              <motion.div key={dot.id} className="absolute" style={{ left: dot.x, top: dot.y, transform: "translate(-50%, -50%)" }}
+                initial={{ opacity: 0, scale: 0 }} animate={{ opacity: dot.id === activeDot ? 1 : dotsCompleted.includes(dot.id) ? 0.3 : 0.15, scale: dot.id === activeDot ? 1 : 0.6 }}
               >
                 <div
-                  className={`relative w-20 h-20 rounded-full flex items-center justify-center cursor-pointer ${
-                    dot.id === activeDot ? "gaze-glow" : ""
-                  }`}
-                  onMouseEnter={() => handleDotHover(dot.id)}
-                  onMouseLeave={() => setIsHovering(false)}
+                  data-target={`dot-${dot.id}`}
+                  className={`relative w-24 h-24 rounded-full flex items-center justify-center cursor-pointer ${dot.id === activeDot ? "gaze-glow" : ""}`}
+                  // Eventos de Mouse originais (só ativam se estiver no modo mouse)
+                  onMouseEnter={() => trackingMode === 'mouse' && handleDotHover(dot.id)}
+                  onMouseLeave={() => trackingMode === 'mouse' && setIsHovering(false)}
                   onClick={() => {
+                    // No modo câmera, o clique ajuda a calibrar a biblioteca do WebGazer
                     if (dot.id === activeDot) {
                       setDotsCompleted((d) => [...d, dot.id]);
                       if (activeDot < 3) setActiveDot((a) => a + 1);
                     }
                   }}
                 >
-                  {/* Progress ring */}
                   <svg className="absolute inset-0 w-full h-full -rotate-90">
-                    <circle
-                      cx="40"
-                      cy="40"
-                      r="36"
-                      fill="none"
-                      stroke="hsl(var(--gaze-glow) / 0.2)"
-                      strokeWidth="3"
-                    />
+                    <circle cx="48" cy="48" r="40" fill="none" stroke="hsl(var(--gaze-glow) / 0.2)" strokeWidth="3" />
                     {dot.id === activeDot && (
-                      <circle
-                        cx="40"
-                        cy="40"
-                        r="36"
-                        fill="none"
-                        stroke="hsl(var(--gaze-ring))"
-                        strokeWidth="3"
-                        strokeDasharray={`${(gazeTime / 1500) * 226} 226`}
-                        strokeLinecap="round"
-                        className="transition-all duration-100"
-                      />
+                      <circle cx="48" cy="48" r="40" fill="none" stroke="hsl(var(--gaze-ring))" strokeWidth="3" strokeDasharray={`${(gazeTime / 1500) * 251} 251`} strokeLinecap="round" className="transition-all duration-100" />
                     )}
                   </svg>
-                  <div
-                    className={`w-6 h-6 rounded-full ${
-                      dotsCompleted.includes(dot.id)
-                        ? "bg-primary"
-                        : dot.id === activeDot
-                        ? "bg-gaze-glow animate-pulse-gaze"
-                        : "bg-muted"
-                    }`}
-                  />
+                  <div className={`w-8 h-8 rounded-full ${dotsCompleted.includes(dot.id) ? "bg-primary" : dot.id === activeDot ? "bg-gaze-glow animate-pulse-gaze" : "bg-muted"}`} />
                 </div>
               </motion.div>
             ))}
 
-            <motion.img
-              src={characterHappy}
-              alt=""
-              className="absolute bottom-8 left-1/2 -translate-x-1/2 w-28 h-28 object-contain"
-              initial={{ opacity: 0, y: 40 }}
-              animate={{ opacity: 0.6, y: 0 }}
-              transition={{ delay: 0.5 }}
-            />
+            <motion.img src={characterHappy} className="absolute bottom-8 left-1/2 -translate-x-1/2 w-28 h-28 object-contain" initial={{ opacity: 0, y: 40 }} animate={{ opacity: 0.6, y: 0 }} />
           </motion.div>
         )}
 
         {/* STEP 2: Demo */}
         {step === 2 && (
-          <motion.div
-            key="demo"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="flex flex-col items-center justify-center h-full px-6 gap-6"
-          >
-            <motion.div
-              className="text-center"
-              initial={{ y: -20, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-            >
+          <motion.div key="demo" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center justify-center h-full px-6 gap-6">
+            <motion.div className="text-center">
               <p className="text-lg font-bold text-foreground">Agora tente!</p>
               <p className="text-sm text-muted-foreground">
-                Olhe para um cartão por 1 segundo 👀
+                {trackingMode === 'mouse' ? "Passe o mouse em um cartão por 1 segundo 👀" : "Olhe para um cartão por 1 segundo 👀"}
               </p>
             </motion.div>
 
@@ -297,54 +291,33 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
               {demoCards.map((card, i) => (
                 <motion.div
                   key={card.label}
-                  initial={{ opacity: 0, scale: 0.8 }}
-                  animate={{
-                    opacity: 1,
-                    scale: demoCardActive === i && demoGazeTime >= 1200 ? 1.05 : 1,
-                  }}
-                  transition={{ delay: i * 0.1, type: "spring" }}
-                  className={`relative bg-card rounded-2xl p-6 flex flex-col items-center justify-center gap-3 card-shadow cursor-pointer transition-all duration-300 ${
-                    demoCardActive === i && demoGazeTime >= 1200
-                      ? "gaze-ring"
-                      : ""
-                  }`}
+                  data-target={`card-${i}`}
+                  className={`relative bg-card rounded-2xl p-6 flex flex-col items-center justify-center gap-3 card-shadow cursor-pointer transition-all duration-300 ${demoCardActive === i && demoGazeTime >= 1200 ? "gaze-ring" : ""}`}
+                  // Eventos de Mouse originais
                   onMouseEnter={() => {
-                    setDemoCardActive(i);
-                    setDemoGazeTime(0);
+                    if (trackingMode === 'mouse') {
+                      setDemoCardActive(i);
+                      setDemoGazeTime(0);
+                    }
                   }}
                   onMouseLeave={() => {
-                    setDemoCardActive(null);
-                    setDemoGazeTime(0);
+                    if (trackingMode === 'mouse') {
+                      setDemoCardActive(null);
+                      setDemoGazeTime(0);
+                    }
                   }}
                   onClick={() => setDemoCardActive(i)}
                 >
                   <span className="text-4xl">{card.emoji}</span>
-                  <span className="text-sm font-bold text-foreground">
-                    {card.label}
-                  </span>
+                  <span className="text-sm font-bold text-foreground">{card.label}</span>
 
-                  {/* Gaze progress bar */}
                   {demoCardActive === i && (
-                    <motion.div
-                      className="absolute bottom-0 left-0 right-0 h-1 rounded-b-2xl overflow-hidden"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                    >
-                      <div
-                        className="h-full bg-gaze-glow transition-all duration-100 rounded-b-2xl"
-                        style={{ width: `${(demoGazeTime / 1200) * 100}%` }}
-                      />
+                    <motion.div className="absolute bottom-0 left-0 right-0 h-1 rounded-b-2xl overflow-hidden">
+                      <div className="h-full bg-gaze-glow transition-all duration-100 rounded-b-2xl" style={{ width: `${(demoGazeTime / 1200) * 100}%` }} />
                     </motion.div>
                   )}
-
-                  {/* Selected checkmark */}
                   {demoCardActive === i && demoGazeTime >= 1200 && (
-                    <motion.div
-                      className="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-primary flex items-center justify-center"
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      transition={{ type: "spring", stiffness: 400 }}
-                    >
+                    <motion.div className="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-primary flex items-center justify-center" initial={{ scale: 0 }} animate={{ scale: 1 }}>
                       <span className="text-primary-foreground text-xs">✓</span>
                     </motion.div>
                   )}
@@ -353,12 +326,9 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
             </div>
 
             <motion.div
+              data-target="continue-btn"
               className="mt-4 px-8 py-3 rounded-2xl bg-primary/10 border-2 border-primary/30 cursor-pointer"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 1.5 }}
-              whileHover={{ scale: 1.05 }}
-              onHoverStart={() => setTimeout(() => setStep(3), 800)}
+              onMouseEnter={() => trackingMode === 'mouse' && setTimeout(() => setStep(3), 800)}
               onClick={() => setStep(3)}
             >
               <p className="text-primary font-bold">Continuar →</p>
@@ -368,35 +338,12 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
 
         {/* STEP 3: Complete */}
         {step === 3 && (
-          <motion.div
-            key="complete"
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0 }}
-            className="flex flex-col items-center justify-center h-full px-6 text-center gap-6"
-          >
-            <motion.img
-              src={characterThumbsup}
-              alt="Pronto!"
-              className="w-44 h-44 object-contain"
-              animate={{ y: [0, -10, 0] }}
-              transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-            />
-            <h2 className="text-2xl font-extrabold text-foreground">
-              Calibração completa! 🎉
-            </h2>
-            <p className="text-muted-foreground">
-              Fixação detectada. Precisão: <span className="font-bold text-primary">99.2%</span>
-            </p>
-            <motion.div
-              className="mt-4 px-10 py-4 rounded-2xl bg-primary cursor-pointer"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.97 }}
-              onClick={onComplete}
-            >
-              <p className="text-primary-foreground font-bold text-lg">
-                Começar a usar! 🚀
-              </p>
+          <motion.div key="complete" className="flex flex-col items-center justify-center h-full px-6 text-center gap-6">
+            <motion.img src={characterThumbsup} className="w-44 h-44 object-contain" animate={{ y: [0, -10, 0] }} transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }} />
+            <h2 className="text-2xl font-extrabold text-foreground">Calibração completa! 🎉</h2>
+            <p className="text-muted-foreground">Fixação detectada. Precisão: <span className="font-bold text-primary">99.2%</span></p>
+            <motion.div className="mt-4 px-10 py-4 rounded-2xl bg-primary cursor-pointer" whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.97 }} onClick={onComplete}>
+              <p className="text-primary-foreground font-bold text-lg">Começar a usar! 🚀</p>
             </motion.div>
           </motion.div>
         )}
