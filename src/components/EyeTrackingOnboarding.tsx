@@ -54,8 +54,12 @@ const startCameraMode = async () => {
 
         setLoadingMsg("Limpando cache de IA e conectando vídeo...");
         
-        // ESSENCIAL: Limpa o cache corrompido de tentativas anteriores que causaram o TENSOR_DICT_MAP
-        webgazer.clearData(); 
+        // Limpeza profunda de cache para evitar o erro TENSOR_DICT_MAP
+        if (typeof webgazer.clearData === 'function') {
+          webgazer.clearData();
+        }
+        localStorage.removeItem('webgazerGlobalData');
+        localStorage.removeItem('webgazerGlobalSettings');
 
         await webgazer.setRegression('ridge')
           .setGazeListener((data: any) => {
@@ -93,8 +97,8 @@ const startCameraMode = async () => {
     } else {
       setLoadingMsg("Baixando biblioteca de visão...");
       const script = document.createElement('script');
-      // NOVO LINK: Usando um CDN estável em vez do servidor instável da universidade
-      script.src = "https://cdn.jsdelivr.net/npm/webgazer/dist/webgazer.min.js";
+      // VOLTAMOS PARA O LINK OFICIAL
+      script.src = "https://webgazer.cs.brown.edu/webgazer.js"; 
       script.async = true;
       script.onload = setupWebgazer;
       script.onerror = () => {
