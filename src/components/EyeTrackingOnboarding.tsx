@@ -6,12 +6,7 @@ import characterWave from "@/assets/character-wave.png";
 import characterHappy from "@/assets/character-happy.png";
 import characterThumbsup from "@/assets/character-thumbsup.png";
 
-interface CalibrationDot {
-  id: number;
-  x: string;
-  y: string;
-  label: string;
-}
+interface CalibrationDot { id: number; x: string; y: string; label: string; }
 
 const CALIBRATION_DOTS: CalibrationDot[] = [
   { id: 0, x: "15%", y: "20%", label: "↖" },
@@ -20,9 +15,7 @@ const CALIBRATION_DOTS: CalibrationDot[] = [
   { id: 3, x: "15%", y: "75%", label: "↙" },
 ];
 
-interface Props {
-  onComplete: () => void;
-}
+interface Props { onComplete: () => void; }
 
 const EyeTrackingOnboarding = ({ onComplete }: Props) => {
   const [step, setStep] = useState(0);
@@ -39,10 +32,14 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
   const [isInitializingCamera, setIsInitializingCamera] = useState(false);
   const [loadingMsg, setLoadingMsg] = useState("");
 
+  // NOVO: Estado para saber se o onboarding acabou (mas a câmera deve continuar)
+  const [isFinished, setIsFinished] = useState(false);
+  const [globalGazeTime, setGlobalGazeTime] = useState(0); // Tempo de fixação para o resto do app
+
   // Referências para o MediaPipe (Google)
   const videoRef = useRef<HTMLVideoElement>(null);
   const requestRef = useRef<number>();
-  const [cursorPos, setCursorPos] = useState({ x: -100, y: -100 }); // Cursor virtual da câmera
+  const [cursorPos, setCursorPos] = useState({ x: -100, y: -100 });
 
   // FUNÇÃO DE INICIALIZAÇÃO DO GOOGLE MEDIAPIPE
   const startCameraMode = async () => {
@@ -51,19 +48,14 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
     setLoadingMsg("Solicitando câmera...");
 
     try {
-      // 1. Liga a câmera
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.play();
       }
 
-      setLoadingMsg("Baixando IA do Google (MediaPipe)...");
-      
-      // 2. Carrega o modelo de Visão
-      const vision = await FilesetResolver.forVisionTasks(
-        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
-      );
+      setLoadingMsg("Baixando IA do Google...");
+      const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm");
       
       const faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
         baseOptions: {
@@ -79,7 +71,6 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
       setIsInitializingCamera(false);
       setStep(1);
 
-      // 3. Loop contínuo de rastreamento (60 frames por segundo)
       let lastVideoTime = -1;
       const renderLoop = () => {
         if (videoRef.current && videoRef.current.readyState >= 2) {
@@ -90,13 +81,10 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
             
             if (results.faceLandmarks && results.faceLandmarks.length > 0) {
               const landmarks = results.faceLandmarks[0];
-              // Usamos a ponta do nariz (índice 1) como "mira" do rosto
               const nose = landmarks[1]; 
               
-              // Multiplicadores para não ter que virar muito o pescoço
-              const rawX = 1 - nose.x; // Inverte o eixo X (efeito espelho)
+              const rawX = 1 - nose.x; 
               const rawY = nose.y;
-              
               const amplifyX = (rawX - 0.5) * 2.0 + 0.5;
               const amplifyY = (rawY - 0.5) * 2.0 + 0.5;
 
@@ -105,14 +93,12 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
               
               setCursorPos({ x, y });
 
-              // Verifica para qual botão o cursor invisível está apontando
               const el = document.elementFromPoint(x, y);
               const target = el?.closest('[data-target]')?.getAttribute('data-target');
               setLookingAt(target || null);
             }
           }
         }
-        // Continua o loop apenas se estiver no modo câmera
         requestRef.current = requestAnimationFrame(renderLoop);
       };
       
@@ -131,36 +117,41 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
     setStep(1);
   };
 
-  // Limpa o uso da câmera quando fechar o componente
+  // LÓGICA DE CLIQUE GLOBAL (Para o app principal)
   useEffect(() => {
-    return () => {
-      if (requestRef.current) cancelAnimationFrame(requestRef.current);
-      if (videoRef.current && videoRef.current.srcObject) {
-        const stream = videoRef.current.srcObject as MediaStream;
-        stream.getTracks().forEach(track => track.stop());
-      }
-    };
-  }, []);
-
-  // Lógica de "Colisão" (traduz a mira da câmera para ações)
-  useEffect(() => {
-    if (trackingMode !== 'camera') return;
-
-    if (step === 1) {
-      setIsHovering(lookingAt === `dot-${activeDot}`);
+    // Só ativa se o onboarding acabou e estiver no modo câmera e olhando para algo
+    if (!isFinished || trackingMode !== 'camera' || !lookingAt) {
+      setGlobalGazeTime(0);
+      return;
     }
 
+    const interval = setInterval(() => {
+      setGlobalGazeTime((prev) => {
+        if (prev >= 1500) { // Fixou o olhar por 1.5s
+          // Encontra o elemento na tela principal e simula um clique nele!
+          const el = document.querySelector(`[data-target="${lookingAt}"]`) as HTMLElement;
+          if (el) el.click();
+          return 0; 
+        }
+        return prev + 50;
+      });
+    }, 50);
+
+    return () => clearInterval(interval);
+  }, [lookingAt, isFinished, trackingMode]);
+
+  // Lógica de "Colisão" do Onboarding
+  useEffect(() => {
+    if (trackingMode !== 'camera' || isFinished) return;
+    if (step === 1) setIsHovering(lookingAt === `dot-${activeDot}`);
     if (step === 2) {
-      if (lookingAt?.startsWith('card-')) {
-        setDemoCardActive(parseInt(lookingAt.split('-')[1]));
-      } else {
-        setDemoCardActive(null);
-      }
+      if (lookingAt?.startsWith('card-')) setDemoCardActive(parseInt(lookingAt.split('-')[1]));
+      else setDemoCardActive(null);
       if (lookingAt === 'continue-btn') setTimeout(() => setStep(3), 800);
     }
-  }, [lookingAt, step, activeDot, trackingMode]);
+  }, [lookingAt, step, activeDot, trackingMode, isFinished]);
 
-  // TEMPORIZADORES (Intactos)
+  // TEMPORIZADORES DO ONBOARDING
   useEffect(() => {
     if (step !== 1 || !isHovering) return setGazeTime(0);
     const interval = setInterval(() => {
@@ -196,123 +187,138 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
   const demoCards = [{ label: "GOSTEI", emoji: "👍" }, { label: "QUERO", emoji: "🙋" }, { label: "BOM", emoji: "😊" }, { label: "MAIS", emoji: "✋" }];
 
   return (
-    <div className="fixed inset-0 z-40 bg-background overflow-hidden">
+    // Se isFinished for true, não bloqueia o fundo, apenas renderiza os cursores flutuantes
+    <div className={isFinished ? "pointer-events-none" : "fixed inset-0 z-40 bg-background overflow-hidden"}>
       
-      {/* Elemento de vídeo escondido, necessário para o Google MediaPipe ler a imagem */}
       <video ref={videoRef} autoPlay playsInline muted className="hidden" />
 
-      {/* Cursores: Mouse ou Câmera */}
-      {trackingMode !== 'camera' && <GazeCursor />}
+      {trackingMode !== 'camera' && !isFinished && <GazeCursor />}
+      
+      {/* O CURSOR DA CÂMERA (Continua vivo mesmo no app principal) */}
       {trackingMode === 'camera' && step > 0 && (
         <div 
-          className="fixed w-5 h-5 bg-primary/80 rounded-full pointer-events-none z-50 shadow-[0_0_15px_rgba(var(--primary),0.8)] transition-all duration-75"
+          className="fixed w-6 h-6 bg-primary/80 rounded-full pointer-events-none z-[100] shadow-[0_0_15px_rgba(var(--primary),0.8)] flex items-center justify-center transition-all duration-75"
           style={{ left: cursorPos.x, top: cursorPos.y, transform: 'translate(-50%, -50%)' }}
-        />
+        >
+          {/* Animação circular de progresso para o clique no app principal */}
+          {isFinished && lookingAt && (
+             <svg className="absolute w-12 h-12 -rotate-90">
+               <circle cx="24" cy="24" r="20" fill="none" stroke="hsl(var(--primary))" strokeWidth="3"
+                 strokeDasharray={`${(globalGazeTime / 1500) * 125} 125`} />
+             </svg>
+          )}
+        </div>
       )}
 
-      <AnimatePresence mode="wait">
-        {step === 0 && (
-          <motion.div key="welcome" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center justify-center h-full px-6 text-center gap-6">
-            <motion.img src={characterWave} className="w-40 h-40 object-contain" animate={{ y: [0, -8, 0] }} transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }} />
-            <h1 className="text-3xl font-extrabold text-foreground">Olá! 👋</h1>
-            <p className="text-lg text-muted-foreground max-w-xs">Como você quer simular o uso do aplicativo hoje?</p>
+      {/* Se não finalizou, mostra as telas do Onboarding */}
+      {!isFinished && (
+        <AnimatePresence mode="wait">
+          {step === 0 && (
+            <motion.div key="welcome" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center justify-center h-full px-6 text-center gap-6">
+              <motion.img src={characterWave} className="w-40 h-40 object-contain" animate={{ y: [0, -8, 0] }} transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }} />
+              <h1 className="text-3xl font-extrabold text-foreground">Olá! 👋</h1>
+              <p className="text-lg text-muted-foreground max-w-xs">Como você quer simular o uso do aplicativo hoje?</p>
 
-            {isInitializingCamera ? (
-               <p className="text-primary font-bold animate-pulse mt-6 text-center max-w-xs">{loadingMsg}</p>
-            ) : (
-              <div className="flex flex-col gap-4 mt-4 w-full max-w-xs">
-                <button className="px-8 py-4 rounded-2xl bg-secondary border-2 cursor-pointer font-bold w-full" onClick={startMouseMode}>
-                  🖱️ Usar Mouse (PC)
-                </button>
-                <button className="px-8 py-4 rounded-2xl bg-primary/10 border-2 border-primary/30 text-primary cursor-pointer font-bold w-full" onClick={startCameraMode}>
-                  📷 Usar Câmera (Mobile)
-                </button>
-              </div>
-            )}
-          </motion.div>
-        )}
-
-        {step === 1 && (
-          <motion.div key="calibration" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="relative h-full">
-            <div className="absolute top-8 left-0 right-0 text-center z-10">
-              <p className="text-lg font-bold">Calibrando intenção...</p>
-              <p className="text-sm text-muted-foreground mt-1">Aponte o {trackingMode === 'mouse' ? 'mouse' : 'rosto'} para o ponto azul 🔵</p>
-              <div className="flex justify-center gap-2 mt-3">
-                {[0, 1, 2, 3].map((i) => (
-                  <div key={i} className={`w-3 h-3 rounded-full ${dotsCompleted.includes(i) ? "bg-primary" : i === activeDot ? "bg-primary animate-pulse" : "bg-muted"}`} />
-                ))}
-              </div>
-            </div>
-
-            {CALIBRATION_DOTS.map((dot) => (
-              <motion.div key={dot.id} className="absolute" style={{ left: dot.x, top: dot.y, transform: "translate(-50%, -50%)" }}
-                initial={{ opacity: 0, scale: 0 }} animate={{ opacity: dot.id === activeDot ? 1 : dotsCompleted.includes(dot.id) ? 0.3 : 0.15, scale: dot.id === activeDot ? 1 : 0.6 }}
-              >
-                <div
-                  data-target={`dot-${dot.id}`}
-                  className={`relative w-24 h-24 rounded-full flex items-center justify-center cursor-pointer`}
-                  onMouseEnter={() => trackingMode === 'mouse' && handleDotHover(dot.id)}
-                  onMouseLeave={() => trackingMode === 'mouse' && setIsHovering(false)}
-                >
-                  <svg className="absolute inset-0 w-full h-full -rotate-90">
-                    <circle cx="48" cy="48" r="40" fill="none" stroke="hsl(var(--primary) / 0.2)" strokeWidth="3" />
-                    {dot.id === activeDot && <circle cx="48" cy="48" r="40" fill="none" stroke="hsl(var(--primary))" strokeWidth="3" strokeDasharray={`${(gazeTime / 1500) * 251} 251`} />}
-                  </svg>
-                  <div className={`w-8 h-8 rounded-full ${dotsCompleted.includes(dot.id) ? "bg-primary" : dot.id === activeDot ? "bg-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.5)]" : "bg-muted"}`} />
+              {isInitializingCamera ? (
+                 <p className="text-primary font-bold animate-pulse mt-6 text-center max-w-xs">{loadingMsg}</p>
+              ) : (
+                <div className="flex flex-col gap-4 mt-4 w-full max-w-xs">
+                  <button className="px-8 py-4 rounded-2xl bg-secondary border-2 cursor-pointer font-bold w-full" onClick={startMouseMode}>
+                    🖱️ Usar Mouse (PC)
+                  </button>
+                  <button className="px-8 py-4 rounded-2xl bg-primary/10 border-2 border-primary/30 text-primary cursor-pointer font-bold w-full" onClick={startCameraMode}>
+                    📷 Usar Câmera (Mobile)
+                  </button>
                 </div>
-              </motion.div>
-            ))}
-            <motion.img src={characterHappy} className="absolute bottom-8 left-1/2 -translate-x-1/2 w-28 h-28 object-contain" initial={{ opacity: 0, y: 40 }} animate={{ opacity: 0.6, y: 0 }} />
-          </motion.div>
-        )}
+              )}
+            </motion.div>
+          )}
 
-        {step === 2 && (
-          <motion.div key="demo" className="flex flex-col items-center justify-center h-full px-6 gap-6">
-            <div className="text-center">
-              <p className="text-lg font-bold">Agora tente!</p>
-              <p className="text-sm text-muted-foreground">Mire em um cartão por 1 segundo 👀</p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 w-full max-w-sm">
-              {demoCards.map((card, i) => (
-                <motion.div
-                  key={card.label}
-                  data-target={`card-${i}`}
-                  className={`relative bg-card rounded-2xl p-6 flex flex-col items-center justify-center gap-3 border-2 transition-all ${demoCardActive === i ? "border-primary scale-105" : "border-transparent"}`}
-                  onMouseEnter={() => { if (trackingMode === 'mouse') setDemoCardActive(i); }}
-                  onMouseLeave={() => { if (trackingMode === 'mouse') setDemoCardActive(null); }}
+          {step === 1 && (
+            <motion.div key="calibration" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="relative h-full">
+              {/* ... Mesma lógica dos pontos ... */}
+              <div className="absolute top-8 left-0 right-0 text-center z-10">
+                <p className="text-lg font-bold">Calibrando intenção...</p>
+                <p className="text-sm text-muted-foreground mt-1">Aponte o {trackingMode === 'mouse' ? 'mouse' : 'rosto'} para o ponto azul 🔵</p>
+              </div>
+              {CALIBRATION_DOTS.map((dot) => (
+                <motion.div key={dot.id} className="absolute" style={{ left: dot.x, top: dot.y, transform: "translate(-50%, -50%)" }}
+                  initial={{ opacity: 0, scale: 0 }} animate={{ opacity: dot.id === activeDot ? 1 : dotsCompleted.includes(dot.id) ? 0.3 : 0.15, scale: dot.id === activeDot ? 1 : 0.6 }}
                 >
-                  <span className="text-4xl">{card.emoji}</span>
-                  <span className="text-sm font-bold">{card.label}</span>
-                  {demoCardActive === i && (
-                    <motion.div className="absolute bottom-0 left-0 right-0 h-1 rounded-b-2xl overflow-hidden">
-                      <div className="h-full bg-primary" style={{ width: `${(demoGazeTime / 1200) * 100}%` }} />
-                    </motion.div>
-                  )}
+                  <div
+                    data-target={`dot-${dot.id}`}
+                    className={`relative w-20 h-20 sm:w-24 sm:h-24 rounded-full flex items-center justify-center cursor-pointer`}
+                    onMouseEnter={() => trackingMode === 'mouse' && handleDotHover(dot.id)}
+                    onMouseLeave={() => trackingMode === 'mouse' && setIsHovering(false)}
+                  >
+                    <svg className="absolute inset-0 w-full h-full -rotate-90">
+                      <circle cx="50%" cy="50%" r="40%" fill="none" stroke="hsl(var(--primary) / 0.2)" strokeWidth="3" />
+                      {dot.id === activeDot && <circle cx="50%" cy="50%" r="40%" fill="none" stroke="hsl(var(--primary))" strokeWidth="3" strokeDasharray={`${(gazeTime / 1500) * 251} 251`} />}
+                    </svg>
+                    <div className={`w-6 h-6 sm:w-8 sm:h-8 rounded-full ${dotsCompleted.includes(dot.id) ? "bg-primary" : dot.id === activeDot ? "bg-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.5)]" : "bg-muted"}`} />
+                  </div>
                 </motion.div>
               ))}
-            </div>
-
-            <motion.div
-              data-target="continue-btn"
-              className={`mt-4 px-8 py-3 rounded-2xl border-2 transition-all ${lookingAt === 'continue-btn' ? 'bg-primary/30 border-primary' : 'bg-primary/10 border-primary/30'}`}
-              onMouseEnter={() => trackingMode === 'mouse' && setTimeout(() => setStep(3), 800)}
-            >
-              <p className="text-primary font-bold">Continuar →</p>
+              <motion.img src={characterHappy} className="absolute bottom-8 left-1/2 -translate-x-1/2 w-28 h-28 object-contain" initial={{ opacity: 0, y: 40 }} animate={{ opacity: 0.6, y: 0 }} />
             </motion.div>
-          </motion.div>
-        )}
+          )}
 
-        {step === 3 && (
-          <motion.div key="complete" className="flex flex-col items-center justify-center h-full text-center">
-            <motion.img src={characterThumbsup} className="w-44 h-44 object-contain" animate={{ y: [0, -10, 0] }} transition={{ duration: 2, repeat: Infinity }} />
-            <h2 className="text-2xl font-extrabold text-foreground mt-4">Tudo pronto! 🎉</h2>
-            <button onClick={onComplete} className="mt-8 px-10 py-4 bg-primary text-primary-foreground font-bold rounded-2xl">
-              Começar a usar! 🚀
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          {step === 2 && (
+            <motion.div key="demo" className="flex flex-col items-center justify-center h-full px-4 gap-6">
+              <div className="text-center">
+                <p className="text-lg font-bold">Agora tente!</p>
+                <p className="text-sm text-muted-foreground">Mire em um cartão por 1 segundo 👀</p>
+              </div>
+
+              {/* Ajuste de responsividade: padding e gap menores no mobile */}
+              <div className="grid grid-cols-2 gap-3 sm:gap-4 w-full max-w-sm px-2">
+                {demoCards.map((card, i) => (
+                  <motion.div
+                    key={card.label}
+                    data-target={`card-${i}`}
+                    className={`relative bg-card rounded-2xl p-3 sm:p-5 flex flex-col items-center justify-center gap-2 border-2 transition-all ${demoCardActive === i ? "border-primary scale-105" : "border-transparent"}`}
+                    onMouseEnter={() => { if (trackingMode === 'mouse') setDemoCardActive(i); }}
+                    onMouseLeave={() => { if (trackingMode === 'mouse') setDemoCardActive(null); }}
+                  >
+                    {/* Emojis menores no mobile */}
+                    <span className="text-3xl sm:text-4xl">{card.emoji}</span>
+                    <span className="text-xs sm:text-sm font-bold">{card.label}</span>
+                    {demoCardActive === i && (
+                      <motion.div className="absolute bottom-0 left-0 right-0 h-1 rounded-b-2xl overflow-hidden">
+                        <div className="h-full bg-primary" style={{ width: `${(demoGazeTime / 1200) * 100}%` }} />
+                      </motion.div>
+                    )}
+                  </motion.div>
+                ))}
+              </div>
+
+              <motion.div
+                data-target="continue-btn"
+                className={`mt-4 px-8 py-3 rounded-2xl border-2 transition-all ${lookingAt === 'continue-btn' ? 'bg-primary/30 border-primary' : 'bg-primary/10 border-primary/30'}`}
+                onMouseEnter={() => trackingMode === 'mouse' && setTimeout(() => setStep(3), 800)}
+              >
+                <p className="text-primary font-bold">Continuar →</p>
+              </motion.div>
+            </motion.div>
+          )}
+
+          {step === 3 && (
+            <motion.div key="complete" className="flex flex-col items-center justify-center h-full text-center">
+              <motion.img src={characterThumbsup} className="w-44 h-44 object-contain" animate={{ y: [0, -10, 0] }} transition={{ duration: 2, repeat: Infinity }} />
+              <h2 className="text-2xl font-extrabold text-foreground mt-4">Tudo pronto! 🎉</h2>
+              <button 
+                onClick={() => {
+                  setIsFinished(true); // Oculta a tela de onboarding, mas mantém o componente vivo
+                  onComplete(); // Avisa a sua aplicação que o app pode começar
+                }} 
+                className="mt-8 px-10 py-4 bg-primary text-primary-foreground font-bold rounded-2xl"
+              >
+                Começar a usar! 🚀
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      )}
     </div>
   );
 };
