@@ -39,23 +39,24 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
   const [loadingMsg, setLoadingMsg] = useState("Preparando para iniciar..."); // NOVO: Estado de loading detalhado
 
   // Função para iniciar o modo Câmera (Com debug de passos)
-  const startCameraMode = async () => {
+const startCameraMode = async () => {
     setIsInitializingCamera(true);
     setTrackingMode('camera');
     setLoadingMsg("Solicitando permissão da câmera...");
 
     const setupWebgazer = async () => {
       try {
-        // 1. FORÇA A PERMISSÃO NATIVA PRIMEIRO (O grande truque para contornar bugs do WebGazer)
         const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
 
         setLoadingMsg("Iniciando motor visual...");
         const webgazer = (window as any).webgazer;
         if (!webgazer) throw new Error("A biblioteca WebGazer não foi baixada.");
 
-        setLoadingMsg("Carregando IA e conectando vídeo...");
+        setLoadingMsg("Limpando cache de IA e conectando vídeo...");
         
-        // 2. INICIA O WEBGAZER
+        // ESSENCIAL: Limpa o cache corrompido de tentativas anteriores que causaram o TENSOR_DICT_MAP
+        webgazer.clearData(); 
+
         await webgazer.setRegression('ridge')
           .setGazeListener((data: any) => {
             if (data) {
@@ -68,10 +69,9 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
 
         setLoadingMsg("Ajustando vídeo para a tela...");
         
-        // 3. GARANTE QUE O VÍDEO RECEBA O STREAM E RODE SEM TRAVAR
         const video = document.getElementById('webgazerVideoFeed') as HTMLVideoElement;
         if (video) {
-          video.srcObject = stream; // Passa a câmera nativa para o vídeo do WebGazer
+          video.srcObject = stream;
           video.playsInline = true;
           video.muted = true;
           await video.play().catch(e => console.error("Erro no play do vídeo:", e));
@@ -82,8 +82,7 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
         setStep(1); 
       } catch (error: any) {
         console.error("ERRO DETALHADO DO WEBGAZER:", error);
-        // MOSTRA O ERRO REAL NA TELA PARA NÃO FICARMOS NO ESCURO
-        alert(`Ocorreu um erro técnico: ${error.message || error.name || error}\n\nSe estiver no PC, aperte F12 e veja a aba Console para mais detalhes.`);
+        alert(`Ocorreu um erro técnico: ${error.message || error.name || error}`);
         setIsInitializingCamera(false);
         setTrackingMode(null);
       }
@@ -94,7 +93,8 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
     } else {
       setLoadingMsg("Baixando biblioteca de visão...");
       const script = document.createElement('script');
-      script.src = "https://webgazer.cs.brown.edu/webgazer.js";
+      // NOVO LINK: Usando um CDN estável em vez do servidor instável da universidade
+      script.src = "https://cdn.jsdelivr.net/npm/webgazer/dist/webgazer.min.js";
       script.async = true;
       script.onload = setupWebgazer;
       script.onerror = () => {
