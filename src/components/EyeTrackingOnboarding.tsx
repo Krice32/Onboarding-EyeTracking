@@ -6,7 +6,6 @@ import characterWave from "@/assets/character-wave.png";
 import characterHappy from "@/assets/character-happy.png";
 import characterThumbsup from "@/assets/character-thumbsup.png";
 
-// Posições seguras
 interface CalibrationDot { id: number; x: string; y: string; label: string; }
 const CALIBRATION_DOTS: CalibrationDot[] = [
   { id: 0, x: "20%", y: "25%", label: "↖" },
@@ -34,7 +33,7 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
 
   const [isFinished, setIsFinished] = useState(false);
   const [globalGazeTime, setGlobalGazeTime] = useState(0); 
-  const [hasDetectedFace, setHasDetectedFace] = useState(false); // NOVO: Só mostra o cursor quando achar o rosto
+  const [hasDetectedFace, setHasDetectedFace] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const requestRef = useRef<number>();
@@ -48,15 +47,19 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
     setLoadingMsg("Solicitando câmera...");
 
     try {
-      // Deixa o celular decidir a melhor resolução nativa (resolve bugs do iOS)
       const stream = await navigator.mediaDevices.getUserMedia({ 
         video: { facingMode: "user" } 
       });
       
       if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        // Play direto, sem depender de eventos que o iOS as vezes bloqueia
-        videoRef.current.play().catch(e => console.error("Erro no play:", e));
+        const video = videoRef.current;
+        video.srcObject = stream;
+        
+        // FORÇA BRUTA PARA O IOS: Injeta os atributos diretamente no HTML DOM
+        video.setAttribute("playsinline", "true");
+        video.setAttribute("webkit-playsinline", "true");
+        
+        await video.play().catch(e => console.error("Erro no play do iOS:", e));
       }
 
       setLoadingMsg("Baixando IA do Google...");
@@ -65,7 +68,8 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
       const faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
         baseOptions: {
           modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
-          delegate: "GPU"
+          // MUDANÇA VITAL PARA IOS: Sai "GPU" e entra "CPU". Evita crash no Safari.
+          delegate: "CPU" 
         },
         outputFaceBlendshapes: false,
         runningMode: "VIDEO",
@@ -212,7 +216,7 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
   return (
     <div className={isFinished ? "pointer-events-none" : "fixed inset-0 z-40 bg-background overflow-hidden"}>
       
-      {/* O TRUQUE DO FANTASMA: O vídeo ocupa a tela toda para o iOS não pausar, mas fica 100% invisível */}
+      {/* O HACK DO IOS: Opacity em 0.01 faz ele ficar invisível para nós, mas "visível" para o Safari não pausar */}
       <video 
         ref={videoRef} 
         autoPlay 
@@ -225,7 +229,7 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
           width: '100vw', 
           height: '100vh', 
           objectFit: 'cover', 
-          opacity: 0, 
+          opacity: 0.01, 
           pointerEvents: 'none', 
           zIndex: -1 
         }} 
@@ -233,7 +237,6 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
 
       {trackingMode !== 'camera' && !isFinished && <GazeCursor />}
       
-      {/* Só exibe o cursor azul se a câmera tiver achado o rosto com sucesso */}
       {trackingMode === 'camera' && step > 0 && hasDetectedFace && (
         <div 
           className="fixed w-6 h-6 bg-primary/80 rounded-full pointer-events-none z-[100] shadow-[0_0_15px_rgba(var(--primary),0.8)] flex items-center justify-center transition-all duration-75"
