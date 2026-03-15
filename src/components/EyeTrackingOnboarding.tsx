@@ -44,23 +44,20 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
   const startCameraMode = async () => {
     setIsInitializingCamera(true);
     setTrackingMode('camera');
-    setLoadingMsg("Solicitando câmera...");
+    setLoadingMsg("Solicitando permissão no iOS/Android...");
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ 
         video: { facingMode: "user" } 
       });
       
-      if (videoRef.current) {
-        const video = videoRef.current;
-        video.srcObject = stream;
-        
-        // FORÇA BRUTA PARA O IOS: Injeta os atributos diretamente no HTML DOM
-        video.setAttribute("playsinline", "true");
-        video.setAttribute("webkit-playsinline", "true");
-        
-        await video.play().catch(e => console.error("Erro no play do iOS:", e));
-      }
+      const video = videoRef.current;
+      if (!video) throw new Error("Elemento de vídeo não encontrado");
+      
+      video.srcObject = stream;
+      video.setAttribute("playsinline", "true");
+      video.setAttribute("webkit-playsinline", "true");
+      video.muted = true;
 
       setLoadingMsg("Baixando IA do Google...");
       const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm");
@@ -68,60 +65,70 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
       const faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
         baseOptions: {
           modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
-          // MUDANÇA VITAL PARA IOS: Sai "GPU" e entra "CPU". Evita crash no Safari.
-          delegate: "CPU" 
+          delegate: "CPU" // Mantemos CPU para segurança máxima no Safari
         },
         outputFaceBlendshapes: false,
         runningMode: "VIDEO",
         numFaces: 1
       });
 
-      setLoadingMsg("Tudo pronto!");
-      setIsInitializingCamera(false);
-      setStep(1);
+      setLoadingMsg("Aguardando câmera do celular ligar...");
 
-      let lastVideoTime = -1;
-      const renderLoop = () => {
-        if (videoRef.current && videoRef.current.readyState >= 2) {
-          let startTimeMs = performance.now();
-          if (lastVideoTime !== videoRef.current.currentTime) {
-            lastVideoTime = videoRef.current.currentTime;
-            const results = faceLandmarker.detectForVideo(videoRef.current, startTimeMs);
-            
-            if (results.faceLandmarks && results.faceLandmarks.length > 0) {
-              setHasDetectedFace(true);
-              const landmarks = results.faceLandmarks[0];
-              const nose = landmarks[1]; 
+      // A GRANDE MUDANÇA: Só inicia o laço de repetição e vai para a Etapa 1
+      // DEPOIS que o iOS confirmar que tem dados reais de imagem disponíveis
+      video.onloadeddata = async () => {
+        try {
+          await video.play();
+          
+          setLoadingMsg("Tudo pronto!");
+          setIsInitializingCamera(false);
+          setStep(1);
+
+          let lastVideoTime = -1;
+          const renderLoop = () => {
+            // Verifica se o vídeo está tocando e se o tempo avançou
+            if (video.readyState >= 2 && video.currentTime !== lastVideoTime) {
+              lastVideoTime = video.currentTime;
               
-              const SENSIBILIDADE_X = 5.0; 
-              const SENSIBILIDADE_Y = 5.0;
-              const CENTRO_X = 0.5; 
-              const CENTRO_Y = 0.5; 
+              const results = faceLandmarker.detectForVideo(video, performance.now());
               
-              const rawX = 1 - nose.x; 
-              const rawY = nose.y;
+              if (results.faceLandmarks && results.faceLandmarks.length > 0) {
+                setHasDetectedFace(true);
+                const landmarks = results.faceLandmarks[0];
+                const nose = landmarks[1]; 
+                
+                const SENSIBILIDADE_X = 7.0; 
+                const SENSIBILIDADE_Y = 7.0;
+                const CENTRO_X = 0.5; 
+                const CENTRO_Y = 0.5; 
+                
+                const rawX = 1 - nose.x; 
+                const rawY = nose.y;
 
-              const amplifyX = (rawX - CENTRO_X) * SENSIBILIDADE_X + 0.5;
-              const amplifyY = (rawY - CENTRO_Y) * SENSIBILIDADE_Y + 0.5;
+                const amplifyX = (rawX - CENTRO_X) * SENSIBILIDADE_X + 0.5;
+                const amplifyY = (rawY - CENTRO_Y) * SENSIBILIDADE_Y + 0.5;
 
-              const targetX = Math.max(0, Math.min(1, amplifyX)) * window.innerWidth;
-              const targetY = Math.max(0, Math.min(1, amplifyY)) * window.innerHeight;
+                const targetX = Math.max(0, Math.min(1, amplifyX)) * window.innerWidth;
+                const targetY = Math.max(0, Math.min(1, amplifyY)) * window.innerHeight;
 
-              smoothRef.current.x += (targetX - smoothRef.current.x) * 0.15;
-              smoothRef.current.y += (targetY - smoothRef.current.y) * 0.15;
-              
-              setCursorPos({ x: smoothRef.current.x, y: smoothRef.current.y });
+                smoothRef.current.x += (targetX - smoothRef.current.x) * 0.15;
+                smoothRef.current.y += (targetY - smoothRef.current.y) * 0.15;
+                
+                setCursorPos({ x: smoothRef.current.x, y: smoothRef.current.y });
 
-              const el = document.elementFromPoint(smoothRef.current.x, smoothRef.current.y);
-              const target = el?.closest('[data-target]')?.getAttribute('data-target');
-              setLookingAt(target || null);
+                const el = document.elementFromPoint(smoothRef.current.x, smoothRef.current.y);
+                const target = el?.closest('[data-target]')?.getAttribute('data-target');
+                setLookingAt(target || null);
+              }
             }
-          }
+            requestRef.current = requestAnimationFrame(renderLoop);
+          };
+          
+          renderLoop();
+        } catch (e) {
+          console.error("Erro ao tentar tocar o vídeo:", e);
         }
-        requestRef.current = requestAnimationFrame(renderLoop);
       };
-      
-      requestRef.current = requestAnimationFrame(renderLoop);
 
     } catch (error: any) {
       console.error(error);
@@ -216,22 +223,21 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
   return (
     <div className={isFinished ? "pointer-events-none" : "fixed inset-0 z-40 bg-background overflow-hidden"}>
       
-      {/* O HACK DO IOS: Opacity em 0.01 faz ele ficar invisível para nós, mas "visível" para o Safari não pausar */}
+      {/* Dimensões reais forçadas para evitar que o iOS declare o tamanho do vídeo como 0x0 */}
       <video 
         ref={videoRef} 
         autoPlay 
         playsInline 
         muted 
+        width="480"
+        height="640"
         style={{ 
-          position: 'fixed', 
-          top: 0, 
-          left: 0, 
-          width: '100vw', 
-          height: '100vh', 
-          objectFit: 'cover', 
-          opacity: 0.01, 
-          pointerEvents: 'none', 
-          zIndex: -1 
+          position: 'absolute', 
+          top: '-10000px', 
+          left: '-10000px', 
+          width: '480px', 
+          height: '640px', 
+          pointerEvents: 'none'
         }} 
       />
 
