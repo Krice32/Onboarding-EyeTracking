@@ -6,6 +6,7 @@ import characterWave from "@/assets/character-wave.png";
 import characterHappy from "@/assets/character-happy.png";
 import characterThumbsup from "@/assets/character-thumbsup.png";
 
+// Posições seguras
 interface CalibrationDot { id: number; x: string; y: string; label: string; }
 const CALIBRATION_DOTS: CalibrationDot[] = [
   { id: 0, x: "20%", y: "25%", label: "↖" },
@@ -33,6 +34,7 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
 
   const [isFinished, setIsFinished] = useState(false);
   const [globalGazeTime, setGlobalGazeTime] = useState(0); 
+  const [hasDetectedFace, setHasDetectedFace] = useState(false); // NOVO: Só mostra o cursor quando achar o rosto
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const requestRef = useRef<number>();
@@ -46,17 +48,15 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
     setLoadingMsg("Solicitando câmera...");
 
     try {
-      // Pede a câmera com dimensões ideais
+      // Deixa o celular decidir a melhor resolução nativa (resolve bugs do iOS)
       const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } } 
+        video: { facingMode: "user" } 
       });
       
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        // CORREÇÃO PARA O iPHONE: O Safari precisa esperar os metadados carregarem antes de dar play
-        videoRef.current.onloadedmetadata = () => {
-          videoRef.current?.play().catch(e => console.error("Erro no play do iOS:", e));
-        };
+        // Play direto, sem depender de eventos que o iOS as vezes bloqueia
+        videoRef.current.play().catch(e => console.error("Erro no play:", e));
       }
 
       setLoadingMsg("Baixando IA do Google...");
@@ -85,6 +85,7 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
             const results = faceLandmarker.detectForVideo(videoRef.current, startTimeMs);
             
             if (results.faceLandmarks && results.faceLandmarks.length > 0) {
+              setHasDetectedFace(true);
               const landmarks = results.faceLandmarks[0];
               const nose = landmarks[1]; 
               
@@ -211,18 +212,29 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
   return (
     <div className={isFinished ? "pointer-events-none" : "fixed inset-0 z-40 bg-background overflow-hidden"}>
       
-      {/* CORREÇÃO PARA O iPHONE: Nunca usar 'hidden' ou 'display: none' em vídeo no Safari */}
+      {/* O TRUQUE DO FANTASMA: O vídeo ocupa a tela toda para o iOS não pausar, mas fica 100% invisível */}
       <video 
         ref={videoRef} 
         autoPlay 
         playsInline 
         muted 
-        style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '640px', height: '480px' }} 
+        style={{ 
+          position: 'fixed', 
+          top: 0, 
+          left: 0, 
+          width: '100vw', 
+          height: '100vh', 
+          objectFit: 'cover', 
+          opacity: 0, 
+          pointerEvents: 'none', 
+          zIndex: -1 
+        }} 
       />
 
       {trackingMode !== 'camera' && !isFinished && <GazeCursor />}
       
-      {trackingMode === 'camera' && step > 0 && (
+      {/* Só exibe o cursor azul se a câmera tiver achado o rosto com sucesso */}
+      {trackingMode === 'camera' && step > 0 && hasDetectedFace && (
         <div 
           className="fixed w-6 h-6 bg-primary/80 rounded-full pointer-events-none z-[100] shadow-[0_0_15px_rgba(var(--primary),0.8)] flex items-center justify-center transition-all duration-75"
           style={{ left: cursorPos.x, top: cursorPos.y, transform: 'translate(-50%, -50%)' }}
