@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 import GazeCursor from "./GazeCursor";
 import characterWave from "@/assets/character-wave.png";
 import characterHappy from "@/assets/character-happy.png";
@@ -32,136 +33,141 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
   const [demoCardActive, setDemoCardActive] = useState<number | null>(null);
   const [demoGazeTime, setDemoGazeTime] = useState(0);
 
-  // ESTADOS DE GERENCIAMENTO DA CÂMERA/MOUSE
+  // Estados dos Modos
   const [trackingMode, setTrackingMode] = useState<'mouse' | 'camera' | null>(null);
   const [lookingAt, setLookingAt] = useState<string | null>(null);
   const [isInitializingCamera, setIsInitializingCamera] = useState(false);
-  const [loadingMsg, setLoadingMsg] = useState("Preparando para iniciar..."); // NOVO: Estado de loading detalhado
+  const [loadingMsg, setLoadingMsg] = useState("");
 
-  // Função para iniciar o modo Câmera (Com debug de passos)
-const startCameraMode = async () => {
+  // Referências para o MediaPipe (Google)
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const requestRef = useRef<number>();
+  const [cursorPos, setCursorPos] = useState({ x: -100, y: -100 }); // Cursor virtual da câmera
+
+  // FUNÇÃO DE INICIALIZAÇÃO DO GOOGLE MEDIAPIPE
+  const startCameraMode = async () => {
     setIsInitializingCamera(true);
     setTrackingMode('camera');
-    setLoadingMsg("Preparando ambiente...");
+    setLoadingMsg("Solicitando câmera...");
 
-    const initWebGazer = async () => {
-      try {
-        const webgazer = (window as any).webgazer;
-        if (!webgazer) throw new Error("A biblioteca não carregou a tempo.");
+    try {
+      // 1. Liga a câmera
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
+      }
 
-        setLoadingMsg("Solicitando câmera (pode demorar alguns segundos)...");
+      setLoadingMsg("Baixando IA do Google (MediaPipe)...");
+      
+      // 2. Carrega o modelo de Visão
+      const vision = await FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
+      );
+      
+      const faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+          delegate: "GPU"
+        },
+        outputFaceBlendshapes: false,
+        runningMode: "VIDEO",
+        numFaces: 1
+      });
 
-        // Limpa o cache antigo de IA que causava o erro TENSOR_DICT_MAP
-        if (typeof webgazer.clearData === 'function') {
-          webgazer.clearData();
-        }
+      setLoadingMsg("Tudo pronto!");
+      setIsInitializingCamera(false);
+      setStep(1);
 
-        // INICIA O MOTOR: Agora deixamos o próprio WebGazer pedir a câmera no tempo dele
-        await webgazer.setRegression('ridge')
-          .setGazeListener((data: any) => {
-            if (data) {
-              const el = document.elementFromPoint(data.x, data.y);
+      // 3. Loop contínuo de rastreamento (60 frames por segundo)
+      let lastVideoTime = -1;
+      const renderLoop = () => {
+        if (videoRef.current && videoRef.current.readyState >= 2) {
+          let startTimeMs = performance.now();
+          if (lastVideoTime !== videoRef.current.currentTime) {
+            lastVideoTime = videoRef.current.currentTime;
+            const results = faceLandmarker.detectForVideo(videoRef.current, startTimeMs);
+            
+            if (results.faceLandmarks && results.faceLandmarks.length > 0) {
+              const landmarks = results.faceLandmarks[0];
+              // Usamos a ponta do nariz (índice 1) como "mira" do rosto
+              const nose = landmarks[1]; 
+              
+              // Multiplicadores para não ter que virar muito o pescoço
+              const rawX = 1 - nose.x; // Inverte o eixo X (efeito espelho)
+              const rawY = nose.y;
+              
+              const amplifyX = (rawX - 0.5) * 2.0 + 0.5;
+              const amplifyY = (rawY - 0.5) * 2.0 + 0.5;
+
+              const x = Math.max(0, Math.min(1, amplifyX)) * window.innerWidth;
+              const y = Math.max(0, Math.min(1, amplifyY)) * window.innerHeight;
+              
+              setCursorPos({ x, y });
+
+              // Verifica para qual botão o cursor invisível está apontando
+              const el = document.elementFromPoint(x, y);
               const target = el?.closest('[data-target]')?.getAttribute('data-target');
               setLookingAt(target || null);
             }
-          })
-          .begin();
-
-        setLoadingMsg("Ajustando vídeo para a tela...");
-
-        // Pega o vídeo gerado pelo WebGazer e garante que rode liso no mobile e PC
-        const video = document.getElementById('webgazerVideoFeed') as HTMLVideoElement;
-        if (video) {
-          video.playsInline = true;
+          }
         }
-
-        webgazer.showVideoPreview(true).showPredictionPoints(true);
-        setIsInitializingCamera(false);
-        setStep(1); 
-      } catch (error: any) {
-        console.error("ERRO DETALHADO DO WEBGAZER:", error);
-        alert(`Erro ao iniciar câmera: ${error.message || error}`);
-        setIsInitializingCamera(false);
-        setTrackingMode(null);
-      }
-    };
-
-    if ((window as any).webgazer) {
-      initWebGazer();
-    } else {
-      setLoadingMsg("Baixando biblioteca de visão...");
-      const script = document.createElement('script');
-      script.src = "https://webgazer.cs.brown.edu/webgazer.js";
-      script.async = true;
-      // O GRANDE TRUQUE: Dá 500ms para a biblioteca se montar internamente antes de rodar
-      script.onload = () => setTimeout(initWebGazer, 500);
-      script.onerror = () => {
-        alert("Erro de rede ao baixar a biblioteca de rastreamento.");
-        setIsInitializingCamera(false);
-        setTrackingMode(null);
+        // Continua o loop apenas se estiver no modo câmera
+        requestRef.current = requestAnimationFrame(renderLoop);
       };
-      document.body.appendChild(script);
+      
+      requestRef.current = requestAnimationFrame(renderLoop);
+
+    } catch (error: any) {
+      console.error(error);
+      alert(`Erro na câmera: ${error.message || error}`);
+      setIsInitializingCamera(false);
+      setTrackingMode(null);
     }
   };
 
-  // Função para iniciar o modo Mouse
   const startMouseMode = () => {
     setTrackingMode('mouse');
     setStep(1);
   };
 
-  // Limpa o WebGazer se o componente for desmontado para não vazar memória
+  // Limpa o uso da câmera quando fechar o componente
   useEffect(() => {
     return () => {
-      const webgazer = (window as any).webgazer;
-      if (webgazer) {
-        webgazer.end();
-        const videoContainer = document.getElementById('webgazerVideoContainer');
-        if (videoContainer) videoContainer.remove();
+      if (requestRef.current) cancelAnimationFrame(requestRef.current);
+      if (videoRef.current && videoRef.current.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach(track => track.stop());
       }
     };
   }, []);
 
-  // LÓGICA DA CÂMERA: Atualiza os estados baseado para onde o usuário olha
+  // Lógica de "Colisão" (traduz a mira da câmera para ações)
   useEffect(() => {
     if (trackingMode !== 'camera') return;
 
     if (step === 1) {
-      if (lookingAt === `dot-${activeDot}`) {
-        setIsHovering(true);
-      } else {
-        setIsHovering(false);
-      }
+      setIsHovering(lookingAt === `dot-${activeDot}`);
     }
 
     if (step === 2) {
       if (lookingAt?.startsWith('card-')) {
-        const idx = parseInt(lookingAt.split('-')[1]);
-        setDemoCardActive(idx);
+        setDemoCardActive(parseInt(lookingAt.split('-')[1]));
       } else {
         setDemoCardActive(null);
       }
-
-      if (lookingAt === 'continue-btn') {
-        setTimeout(() => setStep(3), 800);
-      }
+      if (lookingAt === 'continue-btn') setTimeout(() => setStep(3), 800);
     }
   }, [lookingAt, step, activeDot, trackingMode]);
 
-
-  // LÓGICA DOS TEMPORIZADORES (Intacta)
+  // TEMPORIZADORES (Intactos)
   useEffect(() => {
-    if (step !== 1 || !isHovering) {
-      setGazeTime(0);
-      return;
-    }
+    if (step !== 1 || !isHovering) return setGazeTime(0);
     const interval = setInterval(() => {
       setGazeTime((prev) => {
         if (prev >= 1500) {
           setDotsCompleted((d) => [...d, activeDot]);
-          if (activeDot < 3) {
-            setActiveDot((a) => a + 1);
-          }
+          if (activeDot < 3) setActiveDot((a) => a + 1);
           setIsHovering(false);
           return 0;
         }
@@ -172,110 +178,68 @@ const startCameraMode = async () => {
   }, [step, isHovering, activeDot]);
 
   useEffect(() => {
-    if (dotsCompleted.length === 4 && step === 1) {
-      setTimeout(() => setStep(2), 600);
-    }
+    if (dotsCompleted.length === 4 && step === 1) setTimeout(() => setStep(2), 600);
   }, [dotsCompleted, step]);
 
   useEffect(() => {
-    if (step !== 2 || demoCardActive === null) {
-      setDemoGazeTime(0);
-      return;
-    }
+    if (step !== 2 || demoCardActive === null) return setDemoGazeTime(0);
     const interval = setInterval(() => {
-      setDemoGazeTime((prev) => {
-        if (prev >= 1200) return 1200;
-        return prev + 50;
-      });
+      setDemoGazeTime((prev) => (prev >= 1200 ? 1200 : prev + 50));
     }, 50);
     return () => clearInterval(interval);
   }, [step, demoCardActive]);
 
-  const handleDotHover = useCallback(
-    (dotId: number) => {
-      if (dotId === activeDot && !dotsCompleted.includes(dotId)) {
-        setIsHovering(true);
-      }
-    },
-    [activeDot, dotsCompleted]
-  );
+  const handleDotHover = useCallback((dotId: number) => {
+    if (dotId === activeDot && !dotsCompleted.includes(dotId)) setIsHovering(true);
+  }, [activeDot, dotsCompleted]);
 
-  const demoCards = [
-    { label: "GOSTEI", emoji: "👍" },
-    { label: "QUERO", emoji: "🙋" },
-    { label: "BOM", emoji: "😊" },
-    { label: "MAIS", emoji: "✋" },
-  ];
+  const demoCards = [{ label: "GOSTEI", emoji: "👍" }, { label: "QUERO", emoji: "🙋" }, { label: "BOM", emoji: "😊" }, { label: "MAIS", emoji: "✋" }];
 
   return (
     <div className="fixed inset-0 z-40 bg-background overflow-hidden">
-      {/* Cursor só renderiza no modo mouse */}
+      
+      {/* Elemento de vídeo escondido, necessário para o Google MediaPipe ler a imagem */}
+      <video ref={videoRef} autoPlay playsInline muted className="hidden" />
+
+      {/* Cursores: Mouse ou Câmera */}
       {trackingMode !== 'camera' && <GazeCursor />}
+      {trackingMode === 'camera' && step > 0 && (
+        <div 
+          className="fixed w-5 h-5 bg-primary/80 rounded-full pointer-events-none z-50 shadow-[0_0_15px_rgba(var(--primary),0.8)] transition-all duration-75"
+          style={{ left: cursorPos.x, top: cursorPos.y, transform: 'translate(-50%, -50%)' }}
+        />
+      )}
 
       <AnimatePresence mode="wait">
-        {/* STEP 0: Welcome */}
         {step === 0 && (
-          <motion.div
-            key="welcome"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.6 }}
-            className="flex flex-col items-center justify-center h-full px-6 text-center gap-6"
-          >
-            <motion.img
-              src={characterWave}
-              alt="Personagem acenando"
-              className="w-40 h-40 object-contain"
-              animate={{ y: [0, -8, 0] }}
-              transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
-            />
-            <motion.h1 className="text-3xl font-extrabold text-foreground" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
-              Olá! 👋
-            </motion.h1>
-            <motion.p className="text-lg text-muted-foreground max-w-xs" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
-              Como você quer simular o uso do aplicativo hoje?
-            </motion.p>
+          <motion.div key="welcome" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center justify-center h-full px-6 text-center gap-6">
+            <motion.img src={characterWave} className="w-40 h-40 object-contain" animate={{ y: [0, -8, 0] }} transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }} />
+            <h1 className="text-3xl font-extrabold text-foreground">Olá! 👋</h1>
+            <p className="text-lg text-muted-foreground max-w-xs">Como você quer simular o uso do aplicativo hoje?</p>
 
             {isInitializingCamera ? (
-               <p className="text-primary font-bold animate-pulse mt-6 text-center max-w-xs">
-                 {loadingMsg} {/* Exibindo o estado de carregamento passo a passo */}
-               </p>
+               <p className="text-primary font-bold animate-pulse mt-6 text-center max-w-xs">{loadingMsg}</p>
             ) : (
               <div className="flex flex-col gap-4 mt-4 w-full max-w-xs">
-                <motion.button
-                  className="px-8 py-4 rounded-2xl bg-secondary border-2 border-secondary/50 cursor-pointer text-foreground font-bold text-lg w-full"
-                  whileHover={{ scale: 1.05 }}
-                  onClick={startMouseMode}
-                >
+                <button className="px-8 py-4 rounded-2xl bg-secondary border-2 cursor-pointer font-bold w-full" onClick={startMouseMode}>
                   🖱️ Usar Mouse (PC)
-                </motion.button>
-                
-                <motion.button
-                  className="px-8 py-4 rounded-2xl bg-primary/10 border-2 border-primary/30 cursor-pointer text-primary font-bold text-lg w-full"
-                  whileHover={{ scale: 1.05, borderColor: "hsl(190, 60%, 30%)" }}
-                  onClick={startCameraMode}
-                >
+                </button>
+                <button className="px-8 py-4 rounded-2xl bg-primary/10 border-2 border-primary/30 text-primary cursor-pointer font-bold w-full" onClick={startCameraMode}>
                   📷 Usar Câmera (Mobile)
-                </motion.button>
+                </button>
               </div>
             )}
           </motion.div>
         )}
 
-        {/* STEP 1: Calibration */}
         {step === 1 && (
           <motion.div key="calibration" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="relative h-full">
             <div className="absolute top-8 left-0 right-0 text-center z-10">
-              <motion.p className="text-lg font-bold text-foreground">
-                Calibrando sua intenção...
-              </motion.p>
-              <p className="text-sm text-muted-foreground mt-1">
-                {trackingMode === 'mouse' ? "Passe o mouse pelo ponto iluminado 🔵" : "Olhe para o ponto iluminado e clique nele 🔵"}
-              </p>
+              <p className="text-lg font-bold">Calibrando intenção...</p>
+              <p className="text-sm text-muted-foreground mt-1">Aponte o {trackingMode === 'mouse' ? 'mouse' : 'rosto'} para o ponto azul 🔵</p>
               <div className="flex justify-center gap-2 mt-3">
                 {[0, 1, 2, 3].map((i) => (
-                  <div key={i} className={`w-3 h-3 rounded-full transition-all duration-300 ${dotsCompleted.includes(i) ? "bg-primary scale-100" : i === activeDot ? "bg-gaze-glow animate-pulse-gaze" : "bg-muted"}`} />
+                  <div key={i} className={`w-3 h-3 rounded-full ${dotsCompleted.includes(i) ? "bg-primary" : i === activeDot ? "bg-primary animate-pulse" : "bg-muted"}`} />
                 ))}
               </div>
             </div>
@@ -286,72 +250,43 @@ const startCameraMode = async () => {
               >
                 <div
                   data-target={`dot-${dot.id}`}
-                  className={`relative w-24 h-24 rounded-full flex items-center justify-center cursor-pointer ${dot.id === activeDot ? "gaze-glow" : ""}`}
+                  className={`relative w-24 h-24 rounded-full flex items-center justify-center cursor-pointer`}
                   onMouseEnter={() => trackingMode === 'mouse' && handleDotHover(dot.id)}
                   onMouseLeave={() => trackingMode === 'mouse' && setIsHovering(false)}
-                  onClick={() => {
-                    if (dot.id === activeDot) {
-                      setDotsCompleted((d) => [...d, dot.id]);
-                      if (activeDot < 3) setActiveDot((a) => a + 1);
-                    }
-                  }}
                 >
                   <svg className="absolute inset-0 w-full h-full -rotate-90">
-                    <circle cx="48" cy="48" r="40" fill="none" stroke="hsl(var(--gaze-glow) / 0.2)" strokeWidth="3" />
-                    {dot.id === activeDot && (
-                      <circle cx="48" cy="48" r="40" fill="none" stroke="hsl(var(--gaze-ring))" strokeWidth="3" strokeDasharray={`${(gazeTime / 1500) * 251} 251`} strokeLinecap="round" className="transition-all duration-100" />
-                    )}
+                    <circle cx="48" cy="48" r="40" fill="none" stroke="hsl(var(--primary) / 0.2)" strokeWidth="3" />
+                    {dot.id === activeDot && <circle cx="48" cy="48" r="40" fill="none" stroke="hsl(var(--primary))" strokeWidth="3" strokeDasharray={`${(gazeTime / 1500) * 251} 251`} />}
                   </svg>
-                  <div className={`w-8 h-8 rounded-full ${dotsCompleted.includes(dot.id) ? "bg-primary" : dot.id === activeDot ? "bg-gaze-glow animate-pulse-gaze" : "bg-muted"}`} />
+                  <div className={`w-8 h-8 rounded-full ${dotsCompleted.includes(dot.id) ? "bg-primary" : dot.id === activeDot ? "bg-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.5)]" : "bg-muted"}`} />
                 </div>
               </motion.div>
             ))}
-
             <motion.img src={characterHappy} className="absolute bottom-8 left-1/2 -translate-x-1/2 w-28 h-28 object-contain" initial={{ opacity: 0, y: 40 }} animate={{ opacity: 0.6, y: 0 }} />
           </motion.div>
         )}
 
-        {/* STEP 2: Demo */}
         {step === 2 && (
-          <motion.div key="demo" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center justify-center h-full px-6 gap-6">
-            <motion.div className="text-center">
-              <p className="text-lg font-bold text-foreground">Agora tente!</p>
-              <p className="text-sm text-muted-foreground">
-                {trackingMode === 'mouse' ? "Passe o mouse em um cartão por 1 segundo 👀" : "Olhe para um cartão por 1 segundo 👀"}
-              </p>
-            </motion.div>
+          <motion.div key="demo" className="flex flex-col items-center justify-center h-full px-6 gap-6">
+            <div className="text-center">
+              <p className="text-lg font-bold">Agora tente!</p>
+              <p className="text-sm text-muted-foreground">Mire em um cartão por 1 segundo 👀</p>
+            </div>
 
             <div className="grid grid-cols-2 gap-4 w-full max-w-sm">
               {demoCards.map((card, i) => (
                 <motion.div
                   key={card.label}
                   data-target={`card-${i}`}
-                  className={`relative bg-card rounded-2xl p-6 flex flex-col items-center justify-center gap-3 card-shadow cursor-pointer transition-all duration-300 ${demoCardActive === i && demoGazeTime >= 1200 ? "gaze-ring" : ""}`}
-                  onMouseEnter={() => {
-                    if (trackingMode === 'mouse') {
-                      setDemoCardActive(i);
-                      setDemoGazeTime(0);
-                    }
-                  }}
-                  onMouseLeave={() => {
-                    if (trackingMode === 'mouse') {
-                      setDemoCardActive(null);
-                      setDemoGazeTime(0);
-                    }
-                  }}
-                  onClick={() => setDemoCardActive(i)}
+                  className={`relative bg-card rounded-2xl p-6 flex flex-col items-center justify-center gap-3 border-2 transition-all ${demoCardActive === i ? "border-primary scale-105" : "border-transparent"}`}
+                  onMouseEnter={() => { if (trackingMode === 'mouse') setDemoCardActive(i); }}
+                  onMouseLeave={() => { if (trackingMode === 'mouse') setDemoCardActive(null); }}
                 >
                   <span className="text-4xl">{card.emoji}</span>
-                  <span className="text-sm font-bold text-foreground">{card.label}</span>
-
+                  <span className="text-sm font-bold">{card.label}</span>
                   {demoCardActive === i && (
                     <motion.div className="absolute bottom-0 left-0 right-0 h-1 rounded-b-2xl overflow-hidden">
-                      <div className="h-full bg-gaze-glow transition-all duration-100 rounded-b-2xl" style={{ width: `${(demoGazeTime / 1200) * 100}%` }} />
-                    </motion.div>
-                  )}
-                  {demoCardActive === i && demoGazeTime >= 1200 && (
-                    <motion.div className="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-primary flex items-center justify-center" initial={{ scale: 0 }} animate={{ scale: 1 }}>
-                      <span className="text-primary-foreground text-xs">✓</span>
+                      <div className="h-full bg-primary" style={{ width: `${(demoGazeTime / 1200) * 100}%` }} />
                     </motion.div>
                   )}
                 </motion.div>
@@ -360,24 +295,21 @@ const startCameraMode = async () => {
 
             <motion.div
               data-target="continue-btn"
-              className="mt-4 px-8 py-3 rounded-2xl bg-primary/10 border-2 border-primary/30 cursor-pointer"
+              className={`mt-4 px-8 py-3 rounded-2xl border-2 transition-all ${lookingAt === 'continue-btn' ? 'bg-primary/30 border-primary' : 'bg-primary/10 border-primary/30'}`}
               onMouseEnter={() => trackingMode === 'mouse' && setTimeout(() => setStep(3), 800)}
-              onClick={() => setStep(3)}
             >
               <p className="text-primary font-bold">Continuar →</p>
             </motion.div>
           </motion.div>
         )}
 
-        {/* STEP 3: Complete */}
         {step === 3 && (
-          <motion.div key="complete" className="flex flex-col items-center justify-center h-full px-6 text-center gap-6">
-            <motion.img src={characterThumbsup} className="w-44 h-44 object-contain" animate={{ y: [0, -10, 0] }} transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }} />
-            <h2 className="text-2xl font-extrabold text-foreground">Calibração completa! 🎉</h2>
-            <p className="text-muted-foreground">Fixação detectada. Precisão: <span className="font-bold text-primary">99.2%</span></p>
-            <motion.div className="mt-4 px-10 py-4 rounded-2xl bg-primary cursor-pointer" whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.97 }} onClick={onComplete}>
-              <p className="text-primary-foreground font-bold text-lg">Começar a usar! 🚀</p>
-            </motion.div>
+          <motion.div key="complete" className="flex flex-col items-center justify-center h-full text-center">
+            <motion.img src={characterThumbsup} className="w-44 h-44 object-contain" animate={{ y: [0, -10, 0] }} transition={{ duration: 2, repeat: Infinity }} />
+            <h2 className="text-2xl font-extrabold text-foreground mt-4">Tudo pronto! 🎉</h2>
+            <button onClick={onComplete} className="mt-8 px-10 py-4 bg-primary text-primary-foreground font-bold rounded-2xl">
+              Começar a usar! 🚀
+            </button>
           </motion.div>
         )}
       </AnimatePresence>
