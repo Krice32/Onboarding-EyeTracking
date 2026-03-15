@@ -42,16 +42,20 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
   const startCameraMode = async () => {
     setIsInitializingCamera(true);
     setTrackingMode('camera');
-    setLoadingMsg("Baixando biblioteca de visão (pode demorar)...");
+    setLoadingMsg("Solicitando permissão da câmera...");
 
     const setupWebgazer = async () => {
       try {
+        // 1. FORÇA A PERMISSÃO NATIVA PRIMEIRO (O grande truque para contornar bugs do WebGazer)
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+
         setLoadingMsg("Iniciando motor visual...");
         const webgazer = (window as any).webgazer;
-        if (!webgazer) throw new Error("WebGazer não carregou.");
+        if (!webgazer) throw new Error("A biblioteca WebGazer não foi baixada.");
 
-        setLoadingMsg("Ligando a câmera e carregando IA...");
+        setLoadingMsg("Carregando IA e conectando vídeo...");
         
+        // 2. INICIA O WEBGAZER
         await webgazer.setRegression('ridge')
           .setGazeListener((data: any) => {
             if (data) {
@@ -62,11 +66,12 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
           })
           .begin();
 
-        setLoadingMsg("Ajustando vídeo para mobile...");
+        setLoadingMsg("Ajustando vídeo para a tela...");
         
-        // Hack essencial para mobile: força o vídeo a tocar sem bloquear o navegador
+        // 3. GARANTE QUE O VÍDEO RECEBA O STREAM E RODE SEM TRAVAR
         const video = document.getElementById('webgazerVideoFeed') as HTMLVideoElement;
         if (video) {
+          video.srcObject = stream; // Passa a câmera nativa para o vídeo do WebGazer
           video.playsInline = true;
           video.muted = true;
           await video.play().catch(e => console.error("Erro no play do vídeo:", e));
@@ -75,24 +80,25 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
         webgazer.showVideoPreview(true).showPredictionPoints(true);
         setIsInitializingCamera(false);
         setStep(1); 
-      } catch (error) {
-        console.error(error);
-        alert("Falha ao iniciar. Verifique se o navegador tem permissão de câmera.");
+      } catch (error: any) {
+        console.error("ERRO DETALHADO DO WEBGAZER:", error);
+        // MOSTRA O ERRO REAL NA TELA PARA NÃO FICARMOS NO ESCURO
+        alert(`Ocorreu um erro técnico: ${error.message || error.name || error}\n\nSe estiver no PC, aperte F12 e veja a aba Console para mais detalhes.`);
         setIsInitializingCamera(false);
         setTrackingMode(null);
       }
     };
 
-    // Verifica se o script já existe antes de tentar injetar de novo
     if ((window as any).webgazer) {
       setupWebgazer();
     } else {
+      setLoadingMsg("Baixando biblioteca de visão...");
       const script = document.createElement('script');
       script.src = "https://webgazer.cs.brown.edu/webgazer.js";
       script.async = true;
       script.onload = setupWebgazer;
       script.onerror = () => {
-        alert("Erro de rede. Não foi possível baixar a biblioteca.");
+        alert("Erro de rede: Não foi possível baixar os arquivos de rastreamento visual.");
         setIsInitializingCamera(false);
         setTrackingMode(null);
       };
