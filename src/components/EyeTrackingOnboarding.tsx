@@ -6,7 +6,6 @@ import characterWave from "@/assets/character-wave.png";
 import characterHappy from "@/assets/character-happy.png";
 import characterThumbsup from "@/assets/character-thumbsup.png";
 
-// Posições mais seguras para não vazar no mobile
 interface CalibrationDot { id: number; x: string; y: string; label: string; }
 const CALIBRATION_DOTS: CalibrationDot[] = [
   { id: 0, x: "20%", y: "25%", label: "↖" },
@@ -25,7 +24,7 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
   const [isHovering, setIsHovering] = useState(false);
   const [demoCardActive, setDemoCardActive] = useState<number | null>(null);
   const [demoGazeTime, setDemoGazeTime] = useState(0);
-  const [finishGazeTime, setFinishGazeTime] = useState(0); // NOVO: Tempo do botão final
+  const [finishGazeTime, setFinishGazeTime] = useState(0);
 
   const [trackingMode, setTrackingMode] = useState<'mouse' | 'camera' | null>(null);
   const [lookingAt, setLookingAt] = useState<string | null>(null);
@@ -39,7 +38,6 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
   const requestRef = useRef<number>();
   const [cursorPos, setCursorPos] = useState({ x: -100, y: -100 });
   
-  // Referência para o amortecedor matemático do cursor
   const smoothRef = useRef({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
 
   const startCameraMode = async () => {
@@ -48,10 +46,17 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
     setLoadingMsg("Solicitando câmera...");
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+      // Pede a câmera com dimensões ideais
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } } 
+      });
+      
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play();
+        // CORREÇÃO PARA O iPHONE: O Safari precisa esperar os metadados carregarem antes de dar play
+        videoRef.current.onloadedmetadata = () => {
+          videoRef.current?.play().catch(e => console.error("Erro no play do iOS:", e));
+        };
       }
 
       setLoadingMsg("Baixando IA do Google...");
@@ -85,20 +90,18 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
               
               const SENSIBILIDADE_X = 5.0; 
               const SENSIBILIDADE_Y = 5.0;
-              const CENTRO_X = 1.5; 
-              const CENTRO_Y = 1.5; 
+              const CENTRO_X = 0.5; 
+              const CENTRO_Y = 0.5; 
               
               const rawX = 1 - nose.x; 
               const rawY = nose.y;
 
-              const amplifyX = (rawX - CENTRO_X) * SENSIBILIDADE_X + 1.5;
-              const amplifyY = (rawY - CENTRO_Y) * SENSIBILIDADE_Y + 1.5;
+              const amplifyX = (rawX - CENTRO_X) * SENSIBILIDADE_X + 0.5;
+              const amplifyY = (rawY - CENTRO_Y) * SENSIBILIDADE_Y + 0.5;
 
-              // Coordenada "Bruta"
               const targetX = Math.max(0, Math.min(1, amplifyX)) * window.innerWidth;
               const targetY = Math.max(0, Math.min(1, amplifyY)) * window.innerHeight;
 
-              // A Mágica da Suavização (Amortecedor)
               smoothRef.current.x += (targetX - smoothRef.current.x) * 0.15;
               smoothRef.current.y += (targetY - smoothRef.current.y) * 0.15;
               
@@ -128,7 +131,6 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
     setStep(1);
   };
 
-  // Clique global no resto do App
   useEffect(() => {
     if (!isFinished || trackingMode !== 'camera' || !lookingAt) {
       setGlobalGazeTime(0);
@@ -147,7 +149,6 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
     return () => clearInterval(interval);
   }, [lookingAt, isFinished, trackingMode]);
 
-  // Colisões do Onboarding
   useEffect(() => {
     if (trackingMode !== 'camera' || isFinished) return;
     if (step === 1) setIsHovering(lookingAt === `dot-${activeDot}`);
@@ -158,7 +159,6 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
     }
   }, [lookingAt, step, activeDot, trackingMode, isFinished]);
 
-  // Temporizador da Etapa 1
   useEffect(() => {
     if (step !== 1 || !isHovering) return setGazeTime(0);
     const interval = setInterval(() => {
@@ -175,12 +175,10 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
     return () => clearInterval(interval);
   }, [step, isHovering, activeDot]);
 
-  // Passagem da Etapa 1 para 2
   useEffect(() => {
     if (dotsCompleted.length === 4 && step === 1) setTimeout(() => setStep(2), 600);
   }, [dotsCompleted, step]);
 
-  // Temporizador da Etapa 2
   useEffect(() => {
     if (step !== 2 || demoCardActive === null) return setDemoGazeTime(0);
     const interval = setInterval(() => {
@@ -189,7 +187,6 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
     return () => clearInterval(interval);
   }, [step, demoCardActive]);
 
-  // Temporizador da Etapa 3 (Botão Final)
   useEffect(() => {
     if (step !== 3 || lookingAt !== 'finish-btn') return setFinishGazeTime(0);
     const interval = setInterval(() => {
@@ -213,7 +210,15 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
 
   return (
     <div className={isFinished ? "pointer-events-none" : "fixed inset-0 z-40 bg-background overflow-hidden"}>
-      <video ref={videoRef} autoPlay playsInline muted className="hidden" />
+      
+      {/* CORREÇÃO PARA O iPHONE: Nunca usar 'hidden' ou 'display: none' em vídeo no Safari */}
+      <video 
+        ref={videoRef} 
+        autoPlay 
+        playsInline 
+        muted 
+        style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '640px', height: '480px' }} 
+      />
 
       {trackingMode !== 'camera' && !isFinished && <GazeCursor />}
       
