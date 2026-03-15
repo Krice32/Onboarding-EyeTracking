@@ -42,25 +42,21 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
 const startCameraMode = async () => {
     setIsInitializingCamera(true);
     setTrackingMode('camera');
-    setLoadingMsg("Solicitando permissão da câmera...");
+    setLoadingMsg("Preparando ambiente...");
 
-    const setupWebgazer = async () => {
+    const initWebGazer = async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-
-        setLoadingMsg("Iniciando motor visual...");
         const webgazer = (window as any).webgazer;
-        if (!webgazer) throw new Error("A biblioteca WebGazer não foi baixada.");
+        if (!webgazer) throw new Error("A biblioteca não carregou a tempo.");
 
-        setLoadingMsg("Limpando cache de IA e conectando vídeo...");
-        
-        // Limpeza profunda de cache para evitar o erro TENSOR_DICT_MAP
+        setLoadingMsg("Solicitando câmera (pode demorar alguns segundos)...");
+
+        // Limpa o cache antigo de IA que causava o erro TENSOR_DICT_MAP
         if (typeof webgazer.clearData === 'function') {
           webgazer.clearData();
         }
-        localStorage.removeItem('webgazerGlobalData');
-        localStorage.removeItem('webgazerGlobalSettings');
 
+        // INICIA O MOTOR: Agora deixamos o próprio WebGazer pedir a câmera no tempo dele
         await webgazer.setRegression('ridge')
           .setGazeListener((data: any) => {
             if (data) {
@@ -72,13 +68,11 @@ const startCameraMode = async () => {
           .begin();
 
         setLoadingMsg("Ajustando vídeo para a tela...");
-        
+
+        // Pega o vídeo gerado pelo WebGazer e garante que rode liso no mobile e PC
         const video = document.getElementById('webgazerVideoFeed') as HTMLVideoElement;
         if (video) {
-          video.srcObject = stream;
           video.playsInline = true;
-          video.muted = true;
-          await video.play().catch(e => console.error("Erro no play do vídeo:", e));
         }
 
         webgazer.showVideoPreview(true).showPredictionPoints(true);
@@ -86,23 +80,23 @@ const startCameraMode = async () => {
         setStep(1); 
       } catch (error: any) {
         console.error("ERRO DETALHADO DO WEBGAZER:", error);
-        alert(`Ocorreu um erro técnico: ${error.message || error.name || error}`);
+        alert(`Erro ao iniciar câmera: ${error.message || error}`);
         setIsInitializingCamera(false);
         setTrackingMode(null);
       }
     };
 
     if ((window as any).webgazer) {
-      setupWebgazer();
+      initWebGazer();
     } else {
       setLoadingMsg("Baixando biblioteca de visão...");
       const script = document.createElement('script');
-      // VOLTAMOS PARA O LINK OFICIAL
-      script.src = "https://webgazer.cs.brown.edu/webgazer.js"; 
+      script.src = "https://webgazer.cs.brown.edu/webgazer.js";
       script.async = true;
-      script.onload = setupWebgazer;
+      // O GRANDE TRUQUE: Dá 500ms para a biblioteca se montar internamente antes de rodar
+      script.onload = () => setTimeout(initWebGazer, 500);
       script.onerror = () => {
-        alert("Erro de rede: Não foi possível baixar os arquivos de rastreamento visual.");
+        alert("Erro de rede ao baixar a biblioteca de rastreamento.");
         setIsInitializingCamera(false);
         setTrackingMode(null);
       };
