@@ -6,13 +6,13 @@ import characterWave from "@/assets/character-wave.png";
 import characterHappy from "@/assets/character-happy.png";
 import characterThumbsup from "@/assets/character-thumbsup.png";
 
+// AJUSTE 1: Posições mais seguras para não vazar no mobile
 interface CalibrationDot { id: number; x: string; y: string; label: string; }
-
 const CALIBRATION_DOTS: CalibrationDot[] = [
-  { id: 0, x: "15%", y: "20%", label: "↖" },
-  { id: 1, x: "85%", y: "20%", label: "↗" },
-  { id: 2, x: "85%", y: "75%", label: "↘" },
-  { id: 3, x: "15%", y: "75%", label: "↙" },
+  { id: 0, x: "20%", y: "25%", label: "↖" },
+  { id: 1, x: "80%", y: "25%", label: "↗" },
+  { id: 2, x: "80%", y: "75%", label: "↘" },
+  { id: 3, x: "20%", y: "75%", label: "↙" },
 ];
 
 interface Props { onComplete: () => void; }
@@ -26,22 +26,21 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
   const [demoCardActive, setDemoCardActive] = useState<number | null>(null);
   const [demoGazeTime, setDemoGazeTime] = useState(0);
 
-  // Estados dos Modos
   const [trackingMode, setTrackingMode] = useState<'mouse' | 'camera' | null>(null);
   const [lookingAt, setLookingAt] = useState<string | null>(null);
   const [isInitializingCamera, setIsInitializingCamera] = useState(false);
   const [loadingMsg, setLoadingMsg] = useState("");
 
-  // NOVO: Estado para saber se o onboarding acabou (mas a câmera deve continuar)
   const [isFinished, setIsFinished] = useState(false);
-  const [globalGazeTime, setGlobalGazeTime] = useState(0); // Tempo de fixação para o resto do app
+  const [globalGazeTime, setGlobalGazeTime] = useState(0); 
 
-  // Referências para o MediaPipe (Google)
   const videoRef = useRef<HTMLVideoElement>(null);
   const requestRef = useRef<number>();
   const [cursorPos, setCursorPos] = useState({ x: -100, y: -100 });
+  
+  // Referência para o amortecedor matemático do cursor
+  const smoothRef = useRef({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
 
-  // FUNÇÃO DE INICIALIZAÇÃO DO GOOGLE MEDIAPIPE
   const startCameraMode = async () => {
     setIsInitializingCamera(true);
     setTrackingMode('camera');
@@ -83,17 +82,30 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
               const landmarks = results.faceLandmarks[0];
               const nose = landmarks[1]; 
               
+              const SENSIBILIDADE_X = 5.0; 
+              const SENSIBILIDADE_Y = 5.0;
+              const CENTRO_X = 0.5; 
+              const CENTRO_Y = 0.5; 
+              
               const rawX = 1 - nose.x; 
               const rawY = nose.y;
-              const amplifyX = (rawX - 0.5) * 2.0 + 0.5;
-              const amplifyY = (rawY - 0.5) * 2.0 + 0.5;
 
-              const x = Math.max(0, Math.min(1, amplifyX)) * window.innerWidth;
-              const y = Math.max(0, Math.min(1, amplifyY)) * window.innerHeight;
+              const amplifyX = (rawX - CENTRO_X) * SENSIBILIDADE_X + 0.5;
+              const amplifyY = (rawY - CENTRO_Y) * SENSIBILIDADE_Y + 0.5;
+
+              // Coordenada "Bruta"
+              const targetX = Math.max(0, Math.min(1, amplifyX)) * window.innerWidth;
+              const targetY = Math.max(0, Math.min(1, amplifyY)) * window.innerHeight;
+
+              // AJUSTE 2: A Mágica da Suavização (Amortecedor)
+              // Ignora os tremores e faz o cursor deslizar macio para o alvo
+              smoothRef.current.x += (targetX - smoothRef.current.x) * 0.15;
+              smoothRef.current.y += (targetY - smoothRef.current.y) * 0.15;
               
-              setCursorPos({ x, y });
+              setCursorPos({ x: smoothRef.current.x, y: smoothRef.current.y });
 
-              const el = document.elementFromPoint(x, y);
+              // Usa a coordenada suavizada para checar colisões
+              const el = document.elementFromPoint(smoothRef.current.x, smoothRef.current.y);
               const target = el?.closest('[data-target]')?.getAttribute('data-target');
               setLookingAt(target || null);
             }
@@ -117,18 +129,14 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
     setStep(1);
   };
 
-  // LÓGICA DE CLIQUE GLOBAL (Para o app principal)
   useEffect(() => {
-    // Só ativa se o onboarding acabou e estiver no modo câmera e olhando para algo
     if (!isFinished || trackingMode !== 'camera' || !lookingAt) {
       setGlobalGazeTime(0);
       return;
     }
-
     const interval = setInterval(() => {
       setGlobalGazeTime((prev) => {
-        if (prev >= 1500) { // Fixou o olhar por 1.5s
-          // Encontra o elemento na tela principal e simula um clique nele!
+        if (prev >= 1500) { 
           const el = document.querySelector(`[data-target="${lookingAt}"]`) as HTMLElement;
           if (el) el.click();
           return 0; 
@@ -136,11 +144,9 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
         return prev + 50;
       });
     }, 50);
-
     return () => clearInterval(interval);
   }, [lookingAt, isFinished, trackingMode]);
 
-  // Lógica de "Colisão" do Onboarding
   useEffect(() => {
     if (trackingMode !== 'camera' || isFinished) return;
     if (step === 1) setIsHovering(lookingAt === `dot-${activeDot}`);
@@ -151,7 +157,6 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
     }
   }, [lookingAt, step, activeDot, trackingMode, isFinished]);
 
-  // TEMPORIZADORES DO ONBOARDING
   useEffect(() => {
     if (step !== 1 || !isHovering) return setGazeTime(0);
     const interval = setInterval(() => {
@@ -187,20 +192,16 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
   const demoCards = [{ label: "GOSTEI", emoji: "👍" }, { label: "QUERO", emoji: "🙋" }, { label: "BOM", emoji: "😊" }, { label: "MAIS", emoji: "✋" }];
 
   return (
-    // Se isFinished for true, não bloqueia o fundo, apenas renderiza os cursores flutuantes
     <div className={isFinished ? "pointer-events-none" : "fixed inset-0 z-40 bg-background overflow-hidden"}>
-      
       <video ref={videoRef} autoPlay playsInline muted className="hidden" />
 
       {trackingMode !== 'camera' && !isFinished && <GazeCursor />}
       
-      {/* O CURSOR DA CÂMERA (Continua vivo mesmo no app principal) */}
       {trackingMode === 'camera' && step > 0 && (
         <div 
           className="fixed w-6 h-6 bg-primary/80 rounded-full pointer-events-none z-[100] shadow-[0_0_15px_rgba(var(--primary),0.8)] flex items-center justify-center transition-all duration-75"
           style={{ left: cursorPos.x, top: cursorPos.y, transform: 'translate(-50%, -50%)' }}
         >
-          {/* Animação circular de progresso para o clique no app principal */}
           {isFinished && lookingAt && (
              <svg className="absolute w-12 h-12 -rotate-90">
                <circle cx="24" cy="24" r="20" fill="none" stroke="hsl(var(--primary))" strokeWidth="3"
@@ -210,7 +211,6 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
         </div>
       )}
 
-      {/* Se não finalizou, mostra as telas do Onboarding */}
       {!isFinished && (
         <AnimatePresence mode="wait">
           {step === 0 && (
@@ -236,8 +236,7 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
 
           {step === 1 && (
             <motion.div key="calibration" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="relative h-full">
-              {/* ... Mesma lógica dos pontos ... */}
-              <div className="absolute top-8 left-0 right-0 text-center z-10">
+              <div className="absolute top-12 left-0 right-0 text-center z-10">
                 <p className="text-lg font-bold">Calibrando intenção...</p>
                 <p className="text-sm text-muted-foreground mt-1">Aponte o {trackingMode === 'mouse' ? 'mouse' : 'rosto'} para o ponto azul 🔵</p>
               </div>
@@ -247,7 +246,8 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
                 >
                   <div
                     data-target={`dot-${dot.id}`}
-                    className={`relative w-20 h-20 sm:w-24 sm:h-24 rounded-full flex items-center justify-center cursor-pointer`}
+                    // AJUSTE 3: Pontos menores no mobile (w-14 h-14) para garantir que cabem na tela
+                    className={`relative w-14 h-14 sm:w-24 sm:h-24 rounded-full flex items-center justify-center cursor-pointer`}
                     onMouseEnter={() => trackingMode === 'mouse' && handleDotHover(dot.id)}
                     onMouseLeave={() => trackingMode === 'mouse' && setIsHovering(false)}
                   >
@@ -255,7 +255,7 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
                       <circle cx="50%" cy="50%" r="40%" fill="none" stroke="hsl(var(--primary) / 0.2)" strokeWidth="3" />
                       {dot.id === activeDot && <circle cx="50%" cy="50%" r="40%" fill="none" stroke="hsl(var(--primary))" strokeWidth="3" strokeDasharray={`${(gazeTime / 1500) * 251} 251`} />}
                     </svg>
-                    <div className={`w-6 h-6 sm:w-8 sm:h-8 rounded-full ${dotsCompleted.includes(dot.id) ? "bg-primary" : dot.id === activeDot ? "bg-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.5)]" : "bg-muted"}`} />
+                    <div className={`w-5 h-5 sm:w-8 sm:h-8 rounded-full ${dotsCompleted.includes(dot.id) ? "bg-primary" : dot.id === activeDot ? "bg-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.5)]" : "bg-muted"}`} />
                   </div>
                 </motion.div>
               ))}
@@ -270,7 +270,6 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
                 <p className="text-sm text-muted-foreground">Mire em um cartão por 1 segundo 👀</p>
               </div>
 
-              {/* Ajuste de responsividade: padding e gap menores no mobile */}
               <div className="grid grid-cols-2 gap-3 sm:gap-4 w-full max-w-sm px-2">
                 {demoCards.map((card, i) => (
                   <motion.div
@@ -280,7 +279,6 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
                     onMouseEnter={() => { if (trackingMode === 'mouse') setDemoCardActive(i); }}
                     onMouseLeave={() => { if (trackingMode === 'mouse') setDemoCardActive(null); }}
                   >
-                    {/* Emojis menores no mobile */}
                     <span className="text-3xl sm:text-4xl">{card.emoji}</span>
                     <span className="text-xs sm:text-sm font-bold">{card.label}</span>
                     {demoCardActive === i && (
@@ -308,8 +306,8 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
               <h2 className="text-2xl font-extrabold text-foreground mt-4">Tudo pronto! 🎉</h2>
               <button 
                 onClick={() => {
-                  setIsFinished(true); // Oculta a tela de onboarding, mas mantém o componente vivo
-                  onComplete(); // Avisa a sua aplicação que o app pode começar
+                  setIsFinished(true); 
+                  onComplete(); 
                 }} 
                 className="mt-8 px-10 py-4 bg-primary text-primary-foreground font-bold rounded-2xl"
               >
