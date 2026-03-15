@@ -6,7 +6,7 @@ import characterWave from "@/assets/character-wave.png";
 import characterHappy from "@/assets/character-happy.png";
 import characterThumbsup from "@/assets/character-thumbsup.png";
 
-// AJUSTE 1: Posições mais seguras para não vazar no mobile
+// Posições mais seguras para não vazar no mobile
 interface CalibrationDot { id: number; x: string; y: string; label: string; }
 const CALIBRATION_DOTS: CalibrationDot[] = [
   { id: 0, x: "20%", y: "25%", label: "↖" },
@@ -25,6 +25,7 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
   const [isHovering, setIsHovering] = useState(false);
   const [demoCardActive, setDemoCardActive] = useState<number | null>(null);
   const [demoGazeTime, setDemoGazeTime] = useState(0);
+  const [finishGazeTime, setFinishGazeTime] = useState(0); // NOVO: Tempo do botão final
 
   const [trackingMode, setTrackingMode] = useState<'mouse' | 'camera' | null>(null);
   const [lookingAt, setLookingAt] = useState<string | null>(null);
@@ -84,27 +85,25 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
               
               const SENSIBILIDADE_X = 5.0; 
               const SENSIBILIDADE_Y = 5.0;
-              const CENTRO_X = 0.5; 
-              const CENTRO_Y = 0.5; 
+              const CENTRO_X = 1.5; 
+              const CENTRO_Y = 1.5; 
               
               const rawX = 1 - nose.x; 
               const rawY = nose.y;
 
-              const amplifyX = (rawX - CENTRO_X) * SENSIBILIDADE_X + 0.5;
-              const amplifyY = (rawY - CENTRO_Y) * SENSIBILIDADE_Y + 0.5;
+              const amplifyX = (rawX - CENTRO_X) * SENSIBILIDADE_X + 1.5;
+              const amplifyY = (rawY - CENTRO_Y) * SENSIBILIDADE_Y + 1.5;
 
               // Coordenada "Bruta"
               const targetX = Math.max(0, Math.min(1, amplifyX)) * window.innerWidth;
               const targetY = Math.max(0, Math.min(1, amplifyY)) * window.innerHeight;
 
-              // AJUSTE 2: A Mágica da Suavização (Amortecedor)
-              // Ignora os tremores e faz o cursor deslizar macio para o alvo
+              // A Mágica da Suavização (Amortecedor)
               smoothRef.current.x += (targetX - smoothRef.current.x) * 0.15;
               smoothRef.current.y += (targetY - smoothRef.current.y) * 0.15;
               
               setCursorPos({ x: smoothRef.current.x, y: smoothRef.current.y });
 
-              // Usa a coordenada suavizada para checar colisões
               const el = document.elementFromPoint(smoothRef.current.x, smoothRef.current.y);
               const target = el?.closest('[data-target]')?.getAttribute('data-target');
               setLookingAt(target || null);
@@ -129,6 +128,7 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
     setStep(1);
   };
 
+  // Clique global no resto do App
   useEffect(() => {
     if (!isFinished || trackingMode !== 'camera' || !lookingAt) {
       setGlobalGazeTime(0);
@@ -147,6 +147,7 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
     return () => clearInterval(interval);
   }, [lookingAt, isFinished, trackingMode]);
 
+  // Colisões do Onboarding
   useEffect(() => {
     if (trackingMode !== 'camera' || isFinished) return;
     if (step === 1) setIsHovering(lookingAt === `dot-${activeDot}`);
@@ -157,6 +158,7 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
     }
   }, [lookingAt, step, activeDot, trackingMode, isFinished]);
 
+  // Temporizador da Etapa 1
   useEffect(() => {
     if (step !== 1 || !isHovering) return setGazeTime(0);
     const interval = setInterval(() => {
@@ -173,10 +175,12 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
     return () => clearInterval(interval);
   }, [step, isHovering, activeDot]);
 
+  // Passagem da Etapa 1 para 2
   useEffect(() => {
     if (dotsCompleted.length === 4 && step === 1) setTimeout(() => setStep(2), 600);
   }, [dotsCompleted, step]);
 
+  // Temporizador da Etapa 2
   useEffect(() => {
     if (step !== 2 || demoCardActive === null) return setDemoGazeTime(0);
     const interval = setInterval(() => {
@@ -184,6 +188,22 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
     }, 50);
     return () => clearInterval(interval);
   }, [step, demoCardActive]);
+
+  // Temporizador da Etapa 3 (Botão Final)
+  useEffect(() => {
+    if (step !== 3 || lookingAt !== 'finish-btn') return setFinishGazeTime(0);
+    const interval = setInterval(() => {
+      setFinishGazeTime((prev) => {
+        if (prev >= 1500) {
+          setIsFinished(true);
+          onComplete();
+          return 1500;
+        }
+        return prev + 50;
+      });
+    }, 50);
+    return () => clearInterval(interval);
+  }, [step, lookingAt, onComplete]);
 
   const handleDotHover = useCallback((dotId: number) => {
     if (dotId === activeDot && !dotsCompleted.includes(dotId)) setIsHovering(true);
@@ -246,7 +266,6 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
                 >
                   <div
                     data-target={`dot-${dot.id}`}
-                    // AJUSTE 3: Pontos menores no mobile (w-14 h-14) para garantir que cabem na tela
                     className={`relative w-14 h-14 sm:w-24 sm:h-24 rounded-full flex items-center justify-center cursor-pointer`}
                     onMouseEnter={() => trackingMode === 'mouse' && handleDotHover(dot.id)}
                     onMouseLeave={() => trackingMode === 'mouse' && setIsHovering(false)}
@@ -304,15 +323,27 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
             <motion.div key="complete" className="flex flex-col items-center justify-center h-full text-center">
               <motion.img src={characterThumbsup} className="w-44 h-44 object-contain" animate={{ y: [0, -10, 0] }} transition={{ duration: 2, repeat: Infinity }} />
               <h2 className="text-2xl font-extrabold text-foreground mt-4">Tudo pronto! 🎉</h2>
-              <button 
+              
+              <motion.div 
+                data-target="finish-btn"
+                className="relative mt-8 px-10 py-4 bg-primary rounded-2xl border-2 border-transparent transition-all overflow-hidden cursor-pointer"
+                onMouseEnter={() => { if (trackingMode === 'mouse') setLookingAt('finish-btn'); }}
+                onMouseLeave={() => { if (trackingMode === 'mouse') setLookingAt(null); }}
                 onClick={() => {
                   setIsFinished(true); 
                   onComplete(); 
-                }} 
-                className="mt-8 px-10 py-4 bg-primary text-primary-foreground font-bold rounded-2xl"
+                }}
               >
-                Começar a usar! 🚀
-              </button>
+                <p className="text-primary-foreground font-bold text-lg relative z-10">
+                  Começar a usar! 🚀
+                </p>
+                {lookingAt === 'finish-btn' && (
+                  <div 
+                    className="absolute top-0 left-0 h-full bg-black/20 z-0 transition-all duration-75" 
+                    style={{ width: `${(finishGazeTime / 1500) * 100}%` }} 
+                  />
+                )}
+              </motion.div>
             </motion.div>
           )}
         </AnimatePresence>
