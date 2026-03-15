@@ -32,40 +32,72 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
   const [demoCardActive, setDemoCardActive] = useState<number | null>(null);
   const [demoGazeTime, setDemoGazeTime] = useState(0);
 
-  // ESTADOS NOVOS PARA GERENCIAR OS MODOS
+  // ESTADOS DE GERENCIAMENTO DA CÂMERA/MOUSE
   const [trackingMode, setTrackingMode] = useState<'mouse' | 'camera' | null>(null);
   const [lookingAt, setLookingAt] = useState<string | null>(null);
   const [isInitializingCamera, setIsInitializingCamera] = useState(false);
+  const [loadingMsg, setLoadingMsg] = useState("Preparando para iniciar..."); // NOVO: Estado de loading detalhado
 
-  // Função para iniciar o modo Câmera
+  // Função para iniciar o modo Câmera (Com debug de passos)
   const startCameraMode = async () => {
     setIsInitializingCamera(true);
     setTrackingMode('camera');
+    setLoadingMsg("Baixando biblioteca de visão (pode demorar)...");
 
-    const initWebGazer = async () => {
-      const webgazer = (window as any).webgazer;
-      if (!webgazer) return;
+    const setupWebgazer = async () => {
+      try {
+        setLoadingMsg("Iniciando motor visual...");
+        const webgazer = (window as any).webgazer;
+        if (!webgazer) throw new Error("WebGazer não carregou.");
 
-      await webgazer.setRegression('ridge')
-        .setGazeListener((data: any) => {
-          if (data) {
-            const el = document.elementFromPoint(data.x, data.y);
-            const target = el?.closest('[data-target]')?.getAttribute('data-target');
-            setLookingAt(target || null);
-          }
-        })
-        .begin();
+        setLoadingMsg("Ligando a câmera e carregando IA...");
+        
+        await webgazer.setRegression('ridge')
+          .setGazeListener((data: any) => {
+            if (data) {
+              const el = document.elementFromPoint(data.x, data.y);
+              const target = el?.closest('[data-target]')?.getAttribute('data-target');
+              setLookingAt(target || null);
+            }
+          })
+          .begin();
 
-      webgazer.showVideoPreview(true).showPredictionPoints(true);
-      setIsInitializingCamera(false);
-      setStep(1); // Avança para calibração
+        setLoadingMsg("Ajustando vídeo para mobile...");
+        
+        // Hack essencial para mobile: força o vídeo a tocar sem bloquear o navegador
+        const video = document.getElementById('webgazerVideoFeed') as HTMLVideoElement;
+        if (video) {
+          video.playsInline = true;
+          video.muted = true;
+          await video.play().catch(e => console.error("Erro no play do vídeo:", e));
+        }
+
+        webgazer.showVideoPreview(true).showPredictionPoints(true);
+        setIsInitializingCamera(false);
+        setStep(1); 
+      } catch (error) {
+        console.error(error);
+        alert("Falha ao iniciar. Verifique se o navegador tem permissão de câmera.");
+        setIsInitializingCamera(false);
+        setTrackingMode(null);
+      }
     };
 
-    const script = document.createElement('script');
-    script.src = "https://webgazer.cs.brown.edu/webgazer.js";
-    script.async = true;
-    script.onload = initWebGazer;
-    document.body.appendChild(script);
+    // Verifica se o script já existe antes de tentar injetar de novo
+    if ((window as any).webgazer) {
+      setupWebgazer();
+    } else {
+      const script = document.createElement('script');
+      script.src = "https://webgazer.cs.brown.edu/webgazer.js";
+      script.async = true;
+      script.onload = setupWebgazer;
+      script.onerror = () => {
+        alert("Erro de rede. Não foi possível baixar a biblioteca.");
+        setIsInitializingCamera(false);
+        setTrackingMode(null);
+      };
+      document.body.appendChild(script);
+    }
   };
 
   // Função para iniciar o modo Mouse
@@ -74,7 +106,7 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
     setStep(1);
   };
 
-  // Limpa o WebGazer se o componente for desmontado
+  // Limpa o WebGazer se o componente for desmontado para não vazar memória
   useEffect(() => {
     return () => {
       const webgazer = (window as any).webgazer;
@@ -113,7 +145,7 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
   }, [lookingAt, step, activeDot, trackingMode]);
 
 
-  // LÓGICA DOS TEMPORIZADORES (Intacta do seu código original)
+  // LÓGICA DOS TEMPORIZADORES (Intacta)
   useEffect(() => {
     if (step !== 1 || !isHovering) {
       setGazeTime(0);
@@ -173,7 +205,7 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
 
   return (
     <div className="fixed inset-0 z-40 bg-background overflow-hidden">
-      {/* O GazeCursor só aparece se estiver no modo mouse para não bugar a câmera */}
+      {/* Cursor só renderiza no modo mouse */}
       {trackingMode !== 'camera' && <GazeCursor />}
 
       <AnimatePresence mode="wait">
@@ -202,10 +234,11 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
             </motion.p>
 
             {isInitializingCamera ? (
-               <p className="text-primary font-bold animate-pulse mt-6">Solicitando acesso à câmera...</p>
+               <p className="text-primary font-bold animate-pulse mt-6 text-center max-w-xs">
+                 {loadingMsg} {/* Exibindo o estado de carregamento passo a passo */}
+               </p>
             ) : (
               <div className="flex flex-col gap-4 mt-4 w-full max-w-xs">
-                {/* Botão Mouse */}
                 <motion.button
                   className="px-8 py-4 rounded-2xl bg-secondary border-2 border-secondary/50 cursor-pointer text-foreground font-bold text-lg w-full"
                   whileHover={{ scale: 1.05 }}
@@ -214,7 +247,6 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
                   🖱️ Usar Mouse (PC)
                 </motion.button>
                 
-                {/* Botão Câmera */}
                 <motion.button
                   className="px-8 py-4 rounded-2xl bg-primary/10 border-2 border-primary/30 cursor-pointer text-primary font-bold text-lg w-full"
                   whileHover={{ scale: 1.05, borderColor: "hsl(190, 60%, 30%)" }}
@@ -251,11 +283,9 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
                 <div
                   data-target={`dot-${dot.id}`}
                   className={`relative w-24 h-24 rounded-full flex items-center justify-center cursor-pointer ${dot.id === activeDot ? "gaze-glow" : ""}`}
-                  // Eventos de Mouse originais (só ativam se estiver no modo mouse)
                   onMouseEnter={() => trackingMode === 'mouse' && handleDotHover(dot.id)}
                   onMouseLeave={() => trackingMode === 'mouse' && setIsHovering(false)}
                   onClick={() => {
-                    // No modo câmera, o clique ajuda a calibrar a biblioteca do WebGazer
                     if (dot.id === activeDot) {
                       setDotsCompleted((d) => [...d, dot.id]);
                       if (activeDot < 3) setActiveDot((a) => a + 1);
@@ -293,7 +323,6 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
                   key={card.label}
                   data-target={`card-${i}`}
                   className={`relative bg-card rounded-2xl p-6 flex flex-col items-center justify-center gap-3 card-shadow cursor-pointer transition-all duration-300 ${demoCardActive === i && demoGazeTime >= 1200 ? "gaze-ring" : ""}`}
-                  // Eventos de Mouse originais
                   onMouseEnter={() => {
                     if (trackingMode === 'mouse') {
                       setDemoCardActive(i);
