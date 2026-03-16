@@ -54,15 +54,12 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
     setLoadingMsg("Solicitando permissão no dispositivo...");
 
     try {
+      // 1. Pede permissão da câmera primeiro (para o navegador já liberar o acesso)
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
       const video = videoRef.current;
       if (!video) throw new Error("Elemento de vídeo não encontrado");
       
-      video.srcObject = stream;
-      video.setAttribute("playsinline", "true");
-      video.setAttribute("webkit-playsinline", "true");
-      video.muted = true;
-
+      // 2. Pausa para baixar os modelos pesados da IA ANTES de injetar o stream no vídeo
       setLoadingMsg("Baixando IA de Rastreamento...");
       const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm");
       
@@ -76,8 +73,14 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
         numFaces: 1
       });
 
+      // 3. Agora que a IA está pronta, configuramos o vídeo e o evento
       setLoadingMsg("Ligando a câmera...");
 
+      video.setAttribute("playsinline", "true");
+      video.setAttribute("webkit-playsinline", "true");
+      video.muted = true;
+
+      // Define o evento ANTES de passar o srcObject
       video.onloadeddata = async () => {
         try {
           await video.play();
@@ -119,6 +122,10 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
           console.error("Erro no play do vídeo:", e);
         }
       };
+
+      // 4. Finalmente, injeta o stream. Isso vai forçar o disparo do 'onloadeddata' logo acima.
+      video.srcObject = stream;
+
     } catch (error: any) {
       alert(`Erro na câmera: ${error.message || error}`);
       setIsInitializingCamera(false);
