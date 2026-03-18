@@ -4,17 +4,16 @@ import { motion } from "framer-motion";
 interface Props {
   label: string;
   image: string;
+  isSelected?: boolean;
   onGazeSelect?: () => void;
 }
 
-const PictureCard = ({ label, image, onGazeSelect }: Props) => {
+const PictureCard = ({ label, image, isSelected = false, onGazeSelect }: Props) => {
   const [gazeTime, setGazeTime] = useState(0);
   const [isHovering, setIsHovering] = useState(false);
-  const [isSelected, setIsSelected] = useState(false);
   const selected = isSelected || gazeTime >= 1200;
 
   const handleSelect = useCallback(() => {
-    setIsSelected(true);
     onGazeSelect?.();
   }, [onGazeSelect]);
 
