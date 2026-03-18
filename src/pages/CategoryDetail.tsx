@@ -23,6 +23,14 @@ const cards = [
 
 const CategoryDetail = () => {
   const navigate = useNavigate();
+  const handleGoBack = () => {
+    if (window.history.length > 1) {
+      navigate(-1);
+      return;
+    }
+
+    navigate("/?screen=app");
+  };
 
   return (
     <div className="min-h-screen bg-background pb-20">
@@ -30,14 +38,14 @@ const CategoryDetail = () => {
 
       <header className="sticky top-0 bg-background/80 backdrop-blur-sm z-20 px-4 py-3 flex items-center justify-between">
         <button
-          onClick={() => navigate("/")}
-          className="w-10 h-10 rounded-full bg-accent flex items-center justify-center text-foreground"
+          onClick={handleGoBack}
+          className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-accent flex items-center justify-center text-foreground"
         >
-          <ArrowLeft className="w-5 h-5" />
+          <ArrowLeft className="w-6 h-6 sm:w-7 sm:h-7" />
         </button>
         <h1 className="text-lg font-extrabold text-foreground">Dia a Dia</h1>
-        <button className="w-10 h-10 rounded-full bg-accent flex items-center justify-center text-foreground">
-          <LayoutGrid className="w-5 h-5" />
+        <button className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-accent flex items-center justify-center text-foreground">
+          <LayoutGrid className="w-6 h-6 sm:w-7 sm:h-7" />
         </button>
       </header>
 

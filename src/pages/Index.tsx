@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { LayoutGrid, ScanEye, Sparkles } from "lucide-react";
 import EyeTrackingOnboarding from "@/components/EyeTrackingOnboarding";
@@ -14,10 +14,22 @@ import characterHappy from "@/assets/character-happy.png";
 import characterSmile from "@/assets/character-smile.png";
 
 const Index = () => {
-  const [screen, setScreen] = useState<"home" | "calibration" | "app">("home");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const screenParam = searchParams.get("screen");
+  const screen: "home" | "calibration" | "app" =
+    screenParam === "calibration" || screenParam === "app" ? screenParam : "home";
   const [greeting, setGreeting] = useState("Bom dia!");
   const navigate = useNavigate();
   const { trackingMode, setTrackingMode } = useTrackingMode();
+
+  const setScreen = (nextScreen: "home" | "calibration" | "app") => {
+    if (nextScreen === "home") {
+      setSearchParams({});
+      return;
+    }
+
+    setSearchParams({ screen: nextScreen });
+  };
 
   useEffect(() => {
     const hour = new Date().getHours();
@@ -144,8 +156,8 @@ const Index = () => {
       <header className="sticky top-0 bg-background/80 backdrop-blur-sm z-20 px-4 py-4 flex items-center justify-between">
         <div />
         <h1 className="text-xl font-extrabold text-foreground">{greeting}</h1>
-        <button className="w-10 h-10 rounded-full bg-accent flex items-center justify-center text-foreground">
-          <LayoutGrid className="w-5 h-5" />
+        <button className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-accent flex items-center justify-center text-foreground">
+          <LayoutGrid className="w-6 h-6 sm:w-7 sm:h-7" />
         </button>
       </header>
 

@@ -31,7 +31,7 @@ const PictureCard = ({ label, image, onGazeSelect }: Props) => {
 
   return (
     <motion.div
-      className={`relative bg-card rounded-2xl p-4 flex flex-col items-center justify-center gap-2 card-shadow cursor-pointer transition-all duration-300 ${
+      className={`relative bg-card rounded-2xl p-5 sm:p-6 flex flex-col items-center justify-center gap-3 card-shadow cursor-pointer transition-all duration-300 ${
         selected ? "gaze-ring" : ""
       }`}
       whileHover={{ scale: 1.03 }}
@@ -40,8 +40,8 @@ const PictureCard = ({ label, image, onGazeSelect }: Props) => {
       onMouseLeave={() => setIsHovering(false)}
       onClick={() => onGazeSelect?.()}
     >
-      <img src={image} alt={label} className="w-20 h-20 object-contain" />
-      <span className="text-sm font-extrabold text-foreground uppercase tracking-wide">
+      <img src={image} alt={label} className="w-24 h-24 sm:w-28 sm:h-28 object-contain" />
+      <span className="text-base sm:text-lg font-extrabold text-foreground uppercase tracking-wide">
         {label}
       </span>
 
@@ -60,12 +60,12 @@ const PictureCard = ({ label, image, onGazeSelect }: Props) => {
 
       {selected && (
         <motion.div
-          className="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-primary flex items-center justify-center"
+          className="absolute -top-2 -right-2 w-8 h-8 rounded-full bg-primary flex items-center justify-center"
           initial={{ scale: 0 }}
           animate={{ scale: 1 }}
           transition={{ type: "spring", stiffness: 400 }}
         >
-          <span className="text-primary-foreground text-xs font-bold">✓</span>
+          <span className="text-primary-foreground text-sm font-bold">{"\u2713"}</span>
         </motion.div>
       )}
     </motion.div>
