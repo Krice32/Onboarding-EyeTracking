@@ -72,7 +72,7 @@ const Index = () => {
             </div>
 
             <div className="mt-6 grid grid-cols-3 gap-2">
-              <div className="rounded-xl border border-primary/20 bg-primary/5 p-2 text-center text-[11px] font-bold text-primary">Calibracao guiada</div>
+              <div className="rounded-xl border border-primary/20 bg-primary/5 p-2 text-center text-[11px] font-bold text-primary">Calibração guiada</div>
               <div className="rounded-xl border border-primary/20 bg-primary/5 p-2 text-center text-[11px] font-bold text-primary">Mouse ou camera</div>
               <div className="rounded-xl border border-primary/20 bg-primary/5 p-2 text-center text-[11px] font-bold text-primary">Acesso rapido</div>
             </div>
@@ -83,7 +83,7 @@ const Index = () => {
               className="mt-7 w-full rounded-2xl bg-primary text-primary-foreground font-extrabold py-4 shadow-lg"
               onClick={() => setScreen("calibration")}
             >
-              Iniciar calibracao
+              Iniciar calibração
             </motion.button>
 
             {trackingMode && (
