@@ -1,15 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
-import GazeCursor from "./GazeCursor";
 import characterHappy from "@/assets/character-happy.png";
 import characterThumbsup from "@/assets/character-thumbsup.png";
 import type { TrackingMode } from "@/context/TrackingModeContext";
 
 interface CalibrationDot {
   id: number;
-  x: string;
-  y: string;
+  xRatio: number;
+  yRatio: number;
 }
 
 interface Props {
@@ -17,12 +16,12 @@ interface Props {
 }
 
 const CALIBRATION_DOTS: CalibrationDot[] = [
-  { id: 0, x: "20%", y: "20%" },
-  { id: 1, x: "80%", y: "20%" },
-  { id: 2, x: "80%", y: "50%" },
-  { id: 3, x: "80%", y: "80%" },
-  { id: 4, x: "20%", y: "80%" },
-  { id: 5, x: "20%", y: "50%" },
+  { id: 0, xRatio: 0, yRatio: 0 },
+  { id: 1, xRatio: 1, yRatio: 0 },
+  { id: 2, xRatio: 1, yRatio: 0.5 },
+  { id: 3, xRatio: 1, yRatio: 1 },
+  { id: 4, xRatio: 0, yRatio: 1 },
+  { id: 5, xRatio: 0, yRatio: 0.5 },
 ];
 
 const DOT_DWELL = 1500;
@@ -45,8 +44,13 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
   const [lookingAt, setLookingAt] = useState<string | null>(null);
   const [isInitializingCamera, setIsInitializingCamera] = useState(false);
   const [loadingMsg, setLoadingMsg] = useState("");
+  const [cameraError, setCameraError] = useState<string | null>(null);
   const [isFinished, setIsFinished] = useState(false);
   const [hasDetectedFace, setHasDetectedFace] = useState(false);
+  const [viewport, setViewport] = useState({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  });
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const requestRef = useRef<number>();
@@ -85,10 +89,12 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
     onComplete(trackingMode);
   }, [onComplete, stopCameraTracking, trackingMode]);
 
-  const startCameraMode = async () => {
+  const startCameraMode = useCallback(async () => {
     stopCameraTracking();
     setIsInitializingCamera(true);
+    setCameraError(null);
     setHasDetectedFace(false);
+    setStep(0);
     setTrackingMode("camera");
     setLoadingMsg("Solicitando permissao da camera...");
 
@@ -139,12 +145,17 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
                 const nose = results.faceLandmarks[0][1];
                 const sensitivityX = 5;
                 const sensitivityY = 5;
+                const cursorSafeMargin = 18;
+                const viewportWidth = window.innerWidth;
+                const viewportHeight = window.innerHeight;
+                const availableWidth = Math.max(1, viewportWidth - cursorSafeMargin * 2);
+                const availableHeight = Math.max(1, viewportHeight - cursorSafeMargin * 2);
 
                 const amplifiedX = ((1 - nose.x) - 0.5) * sensitivityX + 0.5;
                 const amplifiedY = (nose.y - 0.5) * sensitivityY + 0.5;
 
-                const targetX = Math.max(0, Math.min(1, amplifiedX)) * window.innerWidth;
-                const targetY = Math.max(0, Math.min(1, amplifiedY)) * window.innerHeight;
+                const targetX = cursorSafeMargin + Math.max(0, Math.min(1, amplifiedX)) * availableWidth;
+                const targetY = cursorSafeMargin + Math.max(0, Math.min(1, amplifiedY)) * availableHeight;
 
                 smoothRef.current.x += (targetX - smoothRef.current.x) * 0.15;
                 smoothRef.current.y += (targetY - smoothRef.current.y) * 0.15;
@@ -175,23 +186,43 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
       video.srcObject = stream;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      alert(`Erro na camera: ${message}`);
+      setCameraError(message);
+      setLoadingMsg("Falha ao iniciar a camera.");
       setTrackingMode(null);
       setIsInitializingCamera(false);
       stopCameraTracking();
     }
-  };
-
-  const startMouseMode = () => {
-    setTrackingMode("mouse");
-    setStep(1);
-  };
+  }, [stopCameraTracking]);
 
   useEffect(() => {
     return () => {
       stopCameraTracking();
     };
   }, [stopCameraTracking]);
+
+  useEffect(() => {
+    const syncViewport = () => {
+      const visualViewport = window.visualViewport;
+      setViewport({
+        width: Math.round(visualViewport?.width ?? window.innerWidth),
+        height: Math.round(visualViewport?.height ?? window.innerHeight),
+      });
+    };
+
+    syncViewport();
+    window.addEventListener("resize", syncViewport);
+    window.visualViewport?.addEventListener("resize", syncViewport);
+
+    return () => {
+      window.removeEventListener("resize", syncViewport);
+      window.visualViewport?.removeEventListener("resize", syncViewport);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (trackingMode || isInitializingCamera || cameraError || isFinished) return;
+    void startCameraMode();
+  }, [cameraError, isFinished, isInitializingCamera, startCameraMode, trackingMode]);
 
   useEffect(() => {
     if (trackingMode !== "camera" || isFinished) return;
@@ -292,19 +323,20 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
   );
 
   const getAvatarMessage = () => {
-    if (step === 0) return "Bem-vindo ao Matraquinha. Como deseja simular?";
+    if (step === 0) {
+      if (cameraError) return "Nao foi possivel abrir a camera. Toque em tentar novamente.";
+      if (isInitializingCamera) return "Estamos preparando a camera. Permita o acesso para continuar.";
+      return "Posicione o rosto no centro e mantenha o celular firme.";
+    }
 
     if (step === 1) {
-      return trackingMode === "mouse"
-        ? "Vamos calibrar. Passe o mouse na bolinha azul."
-        : "Vamos calibrar. Fixe o olhar na bolinha azul.";
+      if (!hasDetectedFace) return "Ainda nao vimos seu rosto. Aproxime um pouco o celular e ajuste a luz.";
+      return "Siga a bolinha azul e segure o olhar ate completar o anel.";
     }
 
     if (step === 2) {
-      if (lockedCard !== null) return "Parabens, voce conseguiu! Olhe para 'Continuar' para prosseguir.";
-      return trackingMode === "mouse"
-        ? "Hora do teste! Deixe o mouse parado sobre um cartao."
-        : "Hora do teste! Fixe o olhar em um dos cartoes.";
+      if (lockedCard !== null) return "Perfeito! Agora olhe para 'Continuar' para ir ao ultimo passo.";
+      return "Teste rapido: fixe o olhar em um cartao ate aparecer o check verde.";
     }
 
     if (step === 3) return "Tudo pronto. Voce pode comecar a usar.";
@@ -312,19 +344,32 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
   };
 
   const renderAvatar = (avatarSrc: string) => (
-    <div className="flex flex-col items-center justify-center z-10 pointer-events-none mb-6">
+    <div className="w-full max-w-[22rem] flex flex-col items-center justify-center z-10 pointer-events-none mb-4 sm:mb-6">
       <motion.div
         initial={{ opacity: 0, y: 10, scale: 0.95 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.25 }}
-        className="bg-card px-5 py-3 rounded-2xl border-2 border-primary/20 shadow-lg text-center max-w-xs sm:max-w-sm relative mb-4"
+        className="w-full bg-card px-4 sm:px-5 py-3 rounded-2xl border-2 border-primary/20 shadow-lg text-center max-w-[calc(100vw-2rem)] sm:max-w-sm relative mb-4"
       >
-        <p className="text-sm sm:text-base font-bold text-foreground">{getAvatarMessage()}</p>
+        <p className="text-sm sm:text-base leading-snug font-bold text-foreground">{getAvatarMessage()}</p>
         <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-card rotate-45 border-r-2 border-b-2 border-primary/20" />
       </motion.div>
-      <img src={avatarSrc} className="w-28 h-28 sm:w-32 sm:h-32 object-contain drop-shadow-md" alt="Avatar" />
+      <img src={avatarSrc} className="w-24 h-24 sm:w-32 sm:h-32 object-contain drop-shadow-md" alt="Avatar" />
     </div>
   );
+
+  const positionedDots = useMemo(() => {
+    const horizontalPadding = Math.max(48, viewport.width * 0.14);
+    const verticalPadding = Math.max(90, viewport.height * 0.12);
+    const usableWidth = Math.max(1, viewport.width - horizontalPadding * 2);
+    const usableHeight = Math.max(1, viewport.height - verticalPadding * 2);
+
+    return CALIBRATION_DOTS.map((dot) => ({
+      id: dot.id,
+      x: horizontalPadding + usableWidth * dot.xRatio,
+      y: verticalPadding + usableHeight * dot.yRatio,
+    }));
+  }, [viewport.height, viewport.width]);
 
   const demoCards = [
     { label: "GOSTEI", emoji: "\u{1F44D}" },
@@ -334,7 +379,7 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
   ];
 
   return (
-    <div className={isFinished ? "pointer-events-none" : "fixed inset-0 z-40 bg-background overflow-hidden"}>
+    <div className={isFinished ? "pointer-events-none" : "fixed inset-0 z-40 bg-background overflow-hidden h-[100dvh]"}>
       <video
         ref={videoRef}
         autoPlay
@@ -345,11 +390,9 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
         style={{ position: "absolute", top: "-10000px", left: "-10000px", width: "480px", height: "640px", pointerEvents: "none" }}
       />
 
-      {trackingMode !== "camera" && !isFinished && <GazeCursor />}
-
       {trackingMode === "camera" && step > 0 && hasDetectedFace && (
         <div
-          className="fixed w-6 h-6 bg-primary/80 rounded-full pointer-events-none z-[100] shadow-[0_0_15px_rgba(var(--primary),0.8)]"
+          className="fixed w-7 h-7 rounded-full pointer-events-none z-[100] border-2 border-slate-900/80 bg-lime-300 shadow-[0_0_0_3px_rgba(255,255,255,0.55),0_0_20px_rgba(163,230,53,0.95)]"
           style={{ left: cursorPos.x, top: cursorPos.y, transform: "translate(-50%, -50%)" }}
         />
       )}
@@ -357,21 +400,30 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
       {!isFinished && (
         <AnimatePresence mode="wait">
           {step === 0 && (
-            <motion.div key="welcome" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center justify-center h-full px-6 text-center">
+            <motion.div key="welcome" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center justify-center h-full px-4 sm:px-6 text-center">
               {renderAvatar(characterHappy)}
 
-              {isInitializingCamera ? (
-                <p className="text-primary font-bold animate-pulse mt-4">{loadingMsg}</p>
-              ) : (
-                <div className="flex flex-col gap-4 mt-2 w-full max-w-xs">
-                  <motion.button whileHover={{ scale: 1.03 }} className="px-8 py-4 rounded-2xl bg-secondary border-2 cursor-pointer font-bold w-full" onClick={startMouseMode}>
-                    Usar Mouse (PC)
-                  </motion.button>
-                  <motion.button whileHover={{ scale: 1.03 }} className="px-8 py-4 rounded-2xl bg-primary/10 border-2 border-primary/30 text-primary cursor-pointer font-bold w-full" onClick={startCameraMode}>
-                    Usar Camera (Mobile)
-                  </motion.button>
+              <div className="w-full max-w-sm space-y-3">
+                <div className="rounded-2xl border border-primary/20 bg-card/95 px-4 py-3 text-left text-sm text-foreground shadow-sm">
+                  <p className="font-extrabold text-primary mb-1">Dicas rapidas para calibrar</p>
+                  <p>1. Mantenha o rosto centralizado e bem iluminado.</p>
+                  <p>2. Segure o celular na altura dos olhos.</p>
+                  <p>3. Olhe para a bolinha azul ate completar o anel.</p>
                 </div>
-              )}
+
+                <p className="text-primary font-bold animate-pulse mt-1">{loadingMsg}</p>
+
+                {cameraError && (
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    className="w-full px-6 py-3 rounded-2xl bg-primary text-primary-foreground font-extrabold shadow-lg"
+                    onClick={() => void startCameraMode()}
+                  >
+                    Tentar novamente
+                  </motion.button>
+                )}
+              </div>
             </motion.div>
           )}
 
@@ -379,11 +431,11 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
             <motion.div key="calibration" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="relative h-full flex flex-col items-center justify-center">
               {renderAvatar(characterHappy)}
 
-              {CALIBRATION_DOTS.map((dot) => (
+              {positionedDots.map((dot) => (
                 <motion.div
                   key={dot.id}
                   className="absolute"
-                  style={{ left: dot.x, top: dot.y, transform: "translate(-50%, -50%)" }}
+                  style={{ left: `${dot.x}px`, top: `${dot.y}px`, transform: "translate(-50%, -50%)" }}
                   initial={{ opacity: 0, scale: 0 }}
                   animate={{
                     opacity: dot.id === activeDot ? 1 : dotsCompleted.includes(dot.id) ? 0.3 : 0.15,

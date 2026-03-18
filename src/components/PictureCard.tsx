@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 
 interface Props {
@@ -10,7 +10,13 @@ interface Props {
 const PictureCard = ({ label, image, onGazeSelect }: Props) => {
   const [gazeTime, setGazeTime] = useState(0);
   const [isHovering, setIsHovering] = useState(false);
-  const selected = gazeTime >= 1200;
+  const [isSelected, setIsSelected] = useState(false);
+  const selected = isSelected || gazeTime >= 1200;
+
+  const handleSelect = useCallback(() => {
+    setIsSelected(true);
+    onGazeSelect?.();
+  }, [onGazeSelect]);
 
   useEffect(() => {
     if (!isHovering) {
@@ -20,14 +26,20 @@ const PictureCard = ({ label, image, onGazeSelect }: Props) => {
     const interval = setInterval(() => {
       setGazeTime((prev) => {
         if (prev >= 1200) {
-          onGazeSelect?.();
           return 1200;
         }
-        return prev + 50;
+
+        const next = prev + 50;
+        if (next >= 1200) {
+          handleSelect();
+          return 1200;
+        }
+
+        return next;
       });
     }, 50);
     return () => clearInterval(interval);
-  }, [isHovering, onGazeSelect]);
+  }, [handleSelect, isHovering]);
 
   return (
     <motion.div
@@ -38,7 +50,7 @@ const PictureCard = ({ label, image, onGazeSelect }: Props) => {
       whileTap={{ scale: 0.97 }}
       onMouseEnter={() => setIsHovering(true)}
       onMouseLeave={() => setIsHovering(false)}
-      onClick={() => onGazeSelect?.()}
+      onClick={handleSelect}
     >
       <img src={image} alt={label} className="w-24 h-24 sm:w-28 sm:h-28 object-contain" />
       <span className="text-base sm:text-lg font-extrabold text-foreground uppercase tracking-wide">

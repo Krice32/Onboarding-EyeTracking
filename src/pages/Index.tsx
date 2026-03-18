@@ -59,14 +59,16 @@ const Index = () => {
               <Sparkles className="w-5 h-5 text-accent" />
             </div>
 
-            <div className="mt-5 grid grid-cols-[1fr_112px] gap-4 items-end">
-              <div>
+            <div className="mt-5 flex flex-col-reverse sm:grid sm:grid-cols-[1fr_112px] gap-4 items-center sm:items-end">
+              <div className="w-full">
                 <h1 className="text-4xl leading-none font-black text-foreground">Matraquinha</h1>
                 <p className="mt-3 text-sm text-muted-foreground">
                   Uma experiencia pensada para navegar com mais autonomia usando o olhar.
                 </p>
               </div>
-              <img src={characterWave} alt="Mascote" className="w-28 h-28 object-contain drop-shadow-md" />
+              <div className="w-24 h-24 sm:w-28 sm:h-28 overflow-hidden">
+                <img src={characterWave} alt="Mascote" className="w-full h-full object-contain object-right drop-shadow-md" />
+              </div>
             </div>
 
             <div className="mt-6 grid grid-cols-3 gap-2">

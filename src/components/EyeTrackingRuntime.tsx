@@ -144,12 +144,17 @@ const EyeTrackingRuntime = () => {
               const nose = results.faceLandmarks[0][1];
               const sensitivityX = 5;
               const sensitivityY = 5;
+              const cursorSafeMargin = 18;
+              const viewportWidth = window.innerWidth;
+              const viewportHeight = window.innerHeight;
+              const availableWidth = Math.max(1, viewportWidth - cursorSafeMargin * 2);
+              const availableHeight = Math.max(1, viewportHeight - cursorSafeMargin * 2);
 
               const amplifiedX = ((1 - nose.x) - 0.5) * sensitivityX + 0.5;
               const amplifiedY = (nose.y - 0.5) * sensitivityY + 0.5;
 
-              const targetX = Math.max(0, Math.min(1, amplifiedX)) * window.innerWidth;
-              const targetY = Math.max(0, Math.min(1, amplifiedY)) * window.innerHeight;
+              const targetX = cursorSafeMargin + Math.max(0, Math.min(1, amplifiedX)) * availableWidth;
+              const targetY = cursorSafeMargin + Math.max(0, Math.min(1, amplifiedY)) * availableHeight;
 
               smoothRef.current.x += (targetX - smoothRef.current.x) * 0.15;
               smoothRef.current.y += (targetY - smoothRef.current.y) * 0.15;
@@ -257,18 +262,18 @@ const EyeTrackingRuntime = () => {
       </div>
 
       <div
-        className="fixed w-7 h-7 rounded-full pointer-events-none z-[100] bg-primary/85 shadow-[0_0_18px_hsl(var(--primary)/0.45)]"
+        className="fixed w-7 h-7 rounded-full pointer-events-none z-[100] border-2 border-slate-900/80 bg-lime-300 shadow-[0_0_0_3px_rgba(255,255,255,0.55),0_0_20px_rgba(163,230,53,0.95)]"
         style={{ left: cursorPos.x, top: cursorPos.y, transform: "translate(-50%, -50%)" }}
       >
         {activeTargetId && (
           <svg className="absolute -top-3 -left-3 w-14 h-14 -rotate-90">
-            <circle cx="28" cy="28" r="20" fill="none" stroke="hsl(var(--primary) / 0.18)" strokeWidth="3" />
+            <circle cx="28" cy="28" r="20" fill="none" stroke="rgba(15, 23, 42, 0.25)" strokeWidth="3" />
             <circle
               cx="28"
               cy="28"
               r="20"
               fill="none"
-              stroke="hsl(var(--primary))"
+              stroke="rgb(163 230 53)"
               strokeWidth="3"
               strokeDasharray={`${(dwellTime / DWELL_TIME_MS) * 125} 125`}
             />
