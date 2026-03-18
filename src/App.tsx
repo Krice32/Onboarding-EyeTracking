@@ -3,6 +3,7 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { TrackingModeProvider } from "@/context/TrackingModeContext";
 import Index from "./pages/Index.tsx";
 import CategoryDetail from "./pages/CategoryDetail.tsx";
 import NotFound from "./pages/NotFound.tsx";
@@ -12,15 +13,17 @@ const queryClient = new QueryClient();
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter basename="/Onboarding-EyeTracking">
-        <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="/categoria/dia-a-dia" element={<CategoryDetail />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
+      <TrackingModeProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter basename="/Onboarding-EyeTracking">
+          <Routes>
+            <Route path="/" element={<Index />} />
+            <Route path="/categoria/dia-a-dia" element={<CategoryDetail />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TrackingModeProvider>
     </TooltipProvider>
   </QueryClientProvider>
 );

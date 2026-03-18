@@ -2,7 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { ArrowLeft, LayoutGrid } from "lucide-react";
 import { motion } from "framer-motion";
 import PictureCard from "@/components/PictureCard";
-import GazeCursor from "@/components/GazeCursor";
+import EyeTrackingRuntime from "@/components/EyeTrackingRuntime";
 import BottomNav from "@/components/BottomNav";
 
 import characterThumbsup from "@/assets/character-thumbsup.png";
@@ -16,7 +16,7 @@ const cards = [
   { label: "GOSTEI", image: characterThumbsup },
   { label: "QUERO", image: cardQuero },
   { label: "PEGUE", image: cardPegue },
-  { label: "FAÇO", image: cardFaco },
+  { label: "FACO", image: cardFaco },
   { label: "BOM", image: characterSmile },
   { label: "MAIS", image: cardMais },
 ];
@@ -26,9 +26,8 @@ const CategoryDetail = () => {
 
   return (
     <div className="min-h-screen bg-background pb-20">
-      <GazeCursor />
+      <EyeTrackingRuntime />
 
-      {/* Header */}
       <header className="sticky top-0 bg-background/80 backdrop-blur-sm z-20 px-4 py-3 flex items-center justify-between">
         <button
           onClick={() => navigate("/")}
@@ -42,7 +41,6 @@ const CategoryDetail = () => {
         </button>
       </header>
 
-      {/* Cards Grid */}
       <motion.div
         className="grid grid-cols-2 gap-4 px-4 py-4 max-w-lg mx-auto"
         initial={{ opacity: 0 }}
@@ -60,7 +58,7 @@ const CategoryDetail = () => {
               label={card.label}
               image={card.image}
               onGazeSelect={() => {
-                // Could trigger speech or action
+                // Espaco para acao futura: voz, som ou feedback visual.
               }}
             />
           </motion.div>
