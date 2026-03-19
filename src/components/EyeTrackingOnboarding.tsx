@@ -12,6 +12,7 @@ interface CalibrationDot {
 }
 
 interface Props {
+  preferredMode?: TrackingMode | null;
   onComplete: (mode: TrackingMode) => void;
 }
 
@@ -28,7 +29,7 @@ const DOT_DWELL = 1500;
 const CARD_DWELL = 1200;
 const BUTTON_DWELL = 1500;
 
-const EyeTrackingOnboarding = ({ onComplete }: Props) => {
+const EyeTrackingOnboarding = ({ onComplete, preferredMode = null }: Props) => {
   const [step, setStep] = useState(0);
   const [activeDot, setActiveDot] = useState(0);
   const [dotsCompleted, setDotsCompleted] = useState<number[]>([]);
@@ -47,6 +48,7 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [isFinished, setIsFinished] = useState(false);
   const [hasDetectedFace, setHasDetectedFace] = useState(false);
+  const [precisionScore, setPrecisionScore] = useState<number | null>(null);
   const [viewport, setViewport] = useState({
     width: window.innerWidth,
     height: window.innerHeight,
@@ -56,6 +58,9 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
   const requestRef = useRef<number>();
   const streamRef = useRef<MediaStream | null>(null);
   const faceLandmarkerRef = useRef<FaceLandmarker | null>(null);
+  const stepRef = useRef(0);
+  const activeDotRef = useRef(0);
+  const precisionSamplesRef = useRef<number[]>([]);
 
   const [cursorPos, setCursorPos] = useState({ x: -100, y: -100 });
   const smoothRef = useRef({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
@@ -89,11 +94,25 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
     onComplete(trackingMode);
   }, [onComplete, stopCameraTracking, trackingMode]);
 
+  const startMouseMode = useCallback(() => {
+    stopCameraTracking();
+    setIsInitializingCamera(false);
+    setCameraError(null);
+    setLoadingMsg("");
+    setHasDetectedFace(false);
+    setPrecisionScore(null);
+    precisionSamplesRef.current = [];
+    setTrackingMode("mouse");
+    setStep(1);
+  }, [stopCameraTracking]);
+
   const startCameraMode = useCallback(async () => {
     stopCameraTracking();
     setIsInitializingCamera(true);
     setCameraError(null);
     setHasDetectedFace(false);
+    setPrecisionScore(null);
+    precisionSamplesRef.current = [];
     setStep(0);
     setTrackingMode("camera");
     setLoadingMsg("Solicitando permissao da camera...");
@@ -168,6 +187,21 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
                   ?.getAttribute("data-target");
 
                 setLookingAt(targetElement || null);
+
+                if (stepRef.current === 1 && targetElement === `dot-${activeDotRef.current}`) {
+                  const dot = CALIBRATION_DOTS[activeDotRef.current];
+                  if (dot) {
+                    const horizontalPadding = Math.max(48, viewportWidth * 0.14);
+                    const verticalPadding = Math.max(90, viewportHeight * 0.12);
+                    const usableWidth = Math.max(1, viewportWidth - horizontalPadding * 2);
+                    const usableHeight = Math.max(1, viewportHeight - verticalPadding * 2);
+                    const dotX = horizontalPadding + usableWidth * dot.xRatio;
+                    const dotY = verticalPadding + usableHeight * dot.yRatio;
+                    const distance = Math.hypot(smoothRef.current.x - dotX, smoothRef.current.y - dotY);
+                    const normalizedDistance = Math.min(1, distance / (Math.hypot(viewportWidth, viewportHeight) * 0.22));
+                    precisionSamplesRef.current.push(normalizedDistance);
+                  }
+                }
               } else {
                 setHasDetectedFace(false);
                 setLookingAt(null);
@@ -220,9 +254,18 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
   }, []);
 
   useEffect(() => {
-    if (trackingMode || isInitializingCamera || cameraError || isFinished) return;
-    void startCameraMode();
-  }, [cameraError, isFinished, isInitializingCamera, startCameraMode, trackingMode]);
+    stepRef.current = step;
+  }, [step]);
+
+  useEffect(() => {
+    activeDotRef.current = activeDot;
+  }, [activeDot]);
+
+  useEffect(() => {
+    if (preferredMode !== "mouse") return;
+    if (trackingMode || isInitializingCamera || isFinished || step !== 0) return;
+    startMouseMode();
+  }, [isFinished, isInitializingCamera, preferredMode, startMouseMode, step, trackingMode]);
 
   useEffect(() => {
     if (trackingMode !== "camera" || isFinished) return;
@@ -270,10 +313,23 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
 
   useEffect(() => {
     if (dotsCompleted.length === CALIBRATION_DOTS.length && step === 1) {
+      if (trackingMode === "camera") {
+        const samples = precisionSamplesRef.current;
+        if (samples.length > 0) {
+          const avgDistance = samples.reduce((sum, value) => sum + value, 0) / samples.length;
+          const score = Math.max(0, Math.min(100, Math.round((1 - avgDistance) * 100)));
+          setPrecisionScore(score);
+        } else {
+          setPrecisionScore(null);
+        }
+      } else {
+        setPrecisionScore(100);
+      }
+
       const timeout = window.setTimeout(() => setStep(2), 600);
       return () => window.clearTimeout(timeout);
     }
-  }, [dotsCompleted, step]);
+  }, [dotsCompleted, step, trackingMode]);
 
   useEffect(() => {
     if (step !== 2 || demoCardActive === null || lockedCard !== null) {
@@ -324,23 +380,33 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
 
   const getAvatarMessage = () => {
     if (step === 0) {
-      if (cameraError) return "Nao foi possivel abrir a camera. Toque em tentar novamente.";
-      if (isInitializingCamera) return "Estamos preparando a camera. Permita o acesso para continuar.";
-      return "Posicione o rosto no centro e mantenha o celular firme.";
+      if (cameraError) return "Nao foi possivel abrir a camera. Voce pode tentar novamente ou continuar sem camera.";
+      if (isInitializingCamera) return "Estamos preparando o teste com camera. Permita o acesso para continuar.";
+      return "Este prototipo testa acessibilidade por olhar para apoiar a comunicacao.";
     }
 
     if (step === 1) {
+      if (trackingMode === "mouse") return "Modo mouse: passe o cursor na bolinha azul e aguarde o anel completar.";
       if (!hasDetectedFace) return "Ainda nao vimos seu rosto. Aproxime um pouco o celular e ajuste a luz.";
       return "Siga a bolinha azul e segure o olhar ate completar o anel.";
     }
 
     if (step === 2) {
+      if (trackingMode === "mouse") return "Modo mouse: passe o cursor em um cartao e aguarde aparecer o check verde.";
       if (lockedCard !== null) return "Perfeito! Agora olhe para 'Continuar' para ir ao ultimo passo.";
       return "Teste rapido: fixe o olhar em um cartao ate aparecer o check verde.";
     }
 
     if (step === 3) return "Tudo pronto. Voce pode comecar a usar.";
     return "";
+  };
+
+  const getPrecisionSummary = () => {
+    if (precisionScore === null) return null;
+    if (trackingMode === "mouse") return "Modo mouse: nota simulada para demonstracao.";
+    if (precisionScore >= 85) return "Excelente alinhamento do olhar.";
+    if (precisionScore >= 70) return "Boa precisao para continuar o teste.";
+    return "Precisao moderada. Vale repetir com melhor luz para testar.";
   };
 
   const renderAvatar = (avatarSrc: string) => (
@@ -405,24 +471,45 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
 
               <div className="w-full max-w-sm space-y-3">
                 <div className="rounded-2xl border border-primary/20 bg-card/95 px-4 py-3 text-left text-sm text-foreground shadow-sm">
-                  <p className="font-extrabold text-primary mb-1">Dicas rapidas para calibrar</p>
-                  <p>1. Mantenha o rosto centralizado e bem iluminado.</p>
-                  <p>2. Segure o celular na altura dos olhos.</p>
-                  <p>3. Olhe para a bolinha azul ate completar o anel.</p>
+                  <p className="font-extrabold text-primary mb-1">Sobre este prototipo</p>
+                  <p>1. Estamos testando navegacao por olhar para acessibilidade.</p>
+                  <p>2. A camera e usada somente para estimar para onde voce olha.</p>
+                  <p>3. Nao gravamos nem enviamos video durante este teste.</p>
+                  <p>4. O objetivo e validar se o fluxo fica claro e facil de usar.</p>
                 </div>
 
-                <p className="text-primary font-bold animate-pulse mt-1">{loadingMsg}</p>
+                <div className="rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3 text-left text-xs sm:text-sm text-foreground">
+                  <p className="font-bold text-primary mb-1">Antes de liberar a camera</p>
+                  <p>- Posicione o rosto no centro e com boa luz.</p>
+                  <p>- Segure o celular na altura dos olhos.</p>
+                  <p>- Depois, siga a bolinha azul durante a calibracao.</p>
+                </div>
 
-                {cameraError && (
+                {isInitializingCamera ? (
+                  <p className="text-primary font-bold animate-pulse mt-1">{loadingMsg}</p>
+                ) : (
                   <motion.button
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
                     className="w-full px-6 py-3 rounded-2xl bg-primary text-primary-foreground font-extrabold shadow-lg"
                     onClick={() => void startCameraMode()}
                   >
-                    Tentar novamente
+                    Entendi, iniciar com camera (recomendado)
                   </motion.button>
                 )}
+
+                {!isInitializingCamera && (
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    className="w-full px-6 py-3 rounded-2xl border-2 border-primary/30 bg-card text-primary font-extrabold shadow-sm"
+                    onClick={startMouseMode}
+                  >
+                    Testar sem camera (modo mouse)
+                  </motion.button>
+                )}
+
+                {cameraError && <p className="text-sm text-destructive font-bold">{cameraError}</p>}
               </div>
             </motion.div>
           )}
@@ -526,6 +613,18 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
           {step === 3 && (
             <motion.div key="complete" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center justify-center h-full text-center px-6">
               {renderAvatar(characterThumbsup)}
+
+              {precisionScore !== null && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="w-full max-w-sm rounded-2xl border border-primary/25 bg-card px-4 py-3 shadow-sm"
+                >
+                  <p className="text-xs font-extrabold uppercase tracking-wider text-primary">Nota de precisao</p>
+                  <p className="mt-1 text-3xl font-black text-foreground">{precisionScore}/100</p>
+                  <p className="mt-1 text-sm font-semibold text-foreground">{getPrecisionSummary()}</p>
+                </motion.div>
+              )}
 
               <motion.div
                 data-target="finish-btn"

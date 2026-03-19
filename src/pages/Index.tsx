@@ -6,7 +6,7 @@ import EyeTrackingOnboarding from "@/components/EyeTrackingOnboarding";
 import CategoryCard from "@/components/CategoryCard";
 import BottomNav from "@/components/BottomNav";
 import EyeTrackingRuntime from "@/components/EyeTrackingRuntime";
-import { useTrackingMode } from "@/context/TrackingModeContext";
+import { useTrackingMode, type TrackingMode } from "@/context/TrackingModeContext";
 
 import characterThumbsup from "@/assets/character-thumbsup.png";
 import characterWave from "@/assets/character-wave.png";
@@ -16,15 +16,22 @@ import characterSmile from "@/assets/character-smile.png";
 const Index = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const screenParam = searchParams.get("screen");
+  const modeParam = searchParams.get("mode");
+  const preferredCalibrationMode: TrackingMode | null = modeParam === "camera" || modeParam === "mouse" ? modeParam : null;
   const screen: "home" | "calibration" | "app" =
     screenParam === "calibration" || screenParam === "app" ? screenParam : "home";
   const [greeting, setGreeting] = useState("Bom dia!");
   const navigate = useNavigate();
   const { trackingMode, setTrackingMode } = useTrackingMode();
 
-  const setScreen = (nextScreen: "home" | "calibration" | "app") => {
+  const setScreen = (nextScreen: "home" | "calibration" | "app", mode?: TrackingMode) => {
     if (nextScreen === "home") {
       setSearchParams({});
+      return;
+    }
+
+    if (nextScreen === "calibration" && mode) {
+      setSearchParams({ screen: nextScreen, mode });
       return;
     }
 
@@ -72,18 +79,33 @@ const Index = () => {
             </div>
 
             <div className="mt-6 grid grid-cols-3 gap-2">
-              <div className="rounded-xl border border-primary/20 bg-primary/5 p-2 text-center text-[11px] font-bold text-primary">Calibração guiada</div>
+              <div className="rounded-xl border border-primary/20 bg-primary/5 p-2 text-center text-[11px] font-bold text-primary">Calibracao guiada</div>
               <div className="rounded-xl border border-primary/20 bg-primary/5 p-2 text-center text-[11px] font-bold text-primary">Mouse ou camera</div>
               <div className="rounded-xl border border-primary/20 bg-primary/5 p-2 text-center text-[11px] font-bold text-primary">Acesso rapido</div>
+            </div>
+
+            <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-left text-xs sm:text-sm text-foreground">
+              <p className="font-extrabold text-primary">Como vamos testar</p>
+              <p>Para o teste real de acessibilidade, o ideal e usar camera.</p>
+              <p>Se preferir, voce pode continuar sem camera usando mouse/touchpad.</p>
             </div>
 
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               className="mt-7 w-full rounded-2xl bg-primary text-primary-foreground font-extrabold py-4 shadow-lg"
-              onClick={() => setScreen("calibration")}
+              onClick={() => setScreen("calibration", "camera")}
             >
-              Iniciar calibração
+              Iniciar teste com camera (recomendado)
+            </motion.button>
+
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className="mt-3 w-full rounded-2xl border-2 border-primary/30 bg-card py-3 font-bold text-primary"
+              onClick={() => setScreen("calibration", "mouse")}
+            >
+              Continuar sem camera (mouse/touchpad)
             </motion.button>
 
             {trackingMode && (
@@ -91,7 +113,7 @@ const Index = () => {
                 className="mt-3 w-full rounded-2xl border-2 border-primary/25 bg-card py-3 font-bold text-primary"
                 onClick={() => setScreen("app")}
               >
-                Entrar direto no Matraquinha
+                Entrar direto no Matraquinha (modo atual)
               </button>
             )}
           </motion.div>
@@ -103,6 +125,7 @@ const Index = () => {
   if (screen === "calibration") {
     return (
       <EyeTrackingOnboarding
+        preferredMode={preferredCalibrationMode}
         onComplete={(mode) => {
           setTrackingMode(mode);
           setScreen("app");
