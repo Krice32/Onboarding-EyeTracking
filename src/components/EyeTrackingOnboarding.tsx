@@ -4,6 +4,7 @@ import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 import characterHappy from "@/assets/character-happy.png";
 import characterThumbsup from "@/assets/character-thumbsup.png";
 import type { TrackingMode } from "@/context/TrackingModeContext";
+import { useTelemetry } from "@/context/TelemetryContext";
 
 interface CalibrationDot {
   id: number;
@@ -12,8 +13,7 @@ interface CalibrationDot {
 }
 
 interface Props {
-  preferredMode?: TrackingMode | null;
-  onComplete: (mode: TrackingMode) => void;
+  onComplete: (mode: TrackingMode | null) => void;
 }
 
 const CALIBRATION_DOTS: CalibrationDot[] = [
@@ -29,7 +29,8 @@ const DOT_DWELL = 1500;
 const CARD_DWELL = 1200;
 const BUTTON_DWELL = 1500;
 
-const EyeTrackingOnboarding = ({ onComplete, preferredMode = null }: Props) => {
+const EyeTrackingOnboarding = ({ onComplete }: Props) => {
+  const { startSession, markCalibrationStarted, markCalibrationCompleted } = useTelemetry();
   const [step, setStep] = useState(0);
   const [activeDot, setActiveDot] = useState(0);
   const [dotsCompleted, setDotsCompleted] = useState<number[]>([]);
@@ -89,24 +90,25 @@ const EyeTrackingOnboarding = ({ onComplete, preferredMode = null }: Props) => {
 
   const completeOnboarding = useCallback(() => {
     if (!trackingMode) return;
+    markCalibrationCompleted(true);
     setIsFinished(true);
     stopCameraTracking();
     onComplete(trackingMode);
-  }, [onComplete, stopCameraTracking, trackingMode]);
+  }, [markCalibrationCompleted, onComplete, stopCameraTracking, trackingMode]);
 
-  const startMouseMode = useCallback(() => {
+  const skipCalibration = useCallback(() => {
+    if (trackingMode === "camera") {
+      markCalibrationCompleted(false);
+    }
+
+    setIsFinished(true);
     stopCameraTracking();
-    setIsInitializingCamera(false);
-    setCameraError(null);
-    setLoadingMsg("");
-    setHasDetectedFace(false);
-    setPrecisionScore(null);
-    precisionSamplesRef.current = [];
-    setTrackingMode("mouse");
-    setStep(1);
-  }, [stopCameraTracking]);
+    onComplete(null);
+  }, [markCalibrationCompleted, onComplete, stopCameraTracking, trackingMode]);
 
   const startCameraMode = useCallback(async () => {
+    startSession();
+    markCalibrationStarted();
     stopCameraTracking();
     setIsInitializingCamera(true);
     setCameraError(null);
@@ -226,7 +228,7 @@ const EyeTrackingOnboarding = ({ onComplete, preferredMode = null }: Props) => {
       setIsInitializingCamera(false);
       stopCameraTracking();
     }
-  }, [stopCameraTracking]);
+  }, [markCalibrationStarted, startSession, stopCameraTracking]);
 
   useEffect(() => {
     return () => {
@@ -260,12 +262,6 @@ const EyeTrackingOnboarding = ({ onComplete, preferredMode = null }: Props) => {
   useEffect(() => {
     activeDotRef.current = activeDot;
   }, [activeDot]);
-
-  useEffect(() => {
-    if (preferredMode !== "mouse") return;
-    if (trackingMode || isInitializingCamera || isFinished || step !== 0) return;
-    startMouseMode();
-  }, [isFinished, isInitializingCamera, preferredMode, startMouseMode, step, trackingMode]);
 
   useEffect(() => {
     if (trackingMode !== "camera" || isFinished) return;
@@ -313,23 +309,19 @@ const EyeTrackingOnboarding = ({ onComplete, preferredMode = null }: Props) => {
 
   useEffect(() => {
     if (dotsCompleted.length === CALIBRATION_DOTS.length && step === 1) {
-      if (trackingMode === "camera") {
-        const samples = precisionSamplesRef.current;
-        if (samples.length > 0) {
-          const avgDistance = samples.reduce((sum, value) => sum + value, 0) / samples.length;
-          const score = Math.max(0, Math.min(100, Math.round((1 - avgDistance) * 100)));
-          setPrecisionScore(score);
-        } else {
-          setPrecisionScore(null);
-        }
+      const samples = precisionSamplesRef.current;
+      if (samples.length > 0) {
+        const avgDistance = samples.reduce((sum, value) => sum + value, 0) / samples.length;
+        const score = Math.max(0, Math.min(100, Math.round((1 - avgDistance) * 100)));
+        setPrecisionScore(score);
       } else {
-        setPrecisionScore(100);
+        setPrecisionScore(null);
       }
 
       const timeout = window.setTimeout(() => setStep(2), 600);
       return () => window.clearTimeout(timeout);
     }
-  }, [dotsCompleted, step, trackingMode]);
+  }, [dotsCompleted, step]);
 
   useEffect(() => {
     if (step !== 2 || demoCardActive === null || lockedCard !== null) {
@@ -380,19 +372,17 @@ const EyeTrackingOnboarding = ({ onComplete, preferredMode = null }: Props) => {
 
   const getAvatarMessage = () => {
     if (step === 0) {
-      if (cameraError) return "Nao foi possivel abrir a camera. Voce pode tentar novamente ou continuar sem camera.";
+      if (cameraError) return "Nao foi possivel abrir a camera. Voce pode tentar novamente ou continuar sem calibracao.";
       if (isInitializingCamera) return "Estamos preparando o teste com camera. Permita o acesso para continuar.";
       return "Este prototipo testa acessibilidade por olhar para apoiar a comunicacao.";
     }
 
     if (step === 1) {
-      if (trackingMode === "mouse") return "Modo mouse: passe o cursor na bolinha azul e aguarde o anel completar.";
       if (!hasDetectedFace) return "Ainda nao vimos seu rosto. Aproxime um pouco o celular e ajuste a luz.";
       return "Siga a bolinha azul e segure o olhar ate completar o anel.";
     }
 
     if (step === 2) {
-      if (trackingMode === "mouse") return "Modo mouse: passe o cursor em um cartao e aguarde aparecer o check verde.";
       if (lockedCard !== null) return "Perfeito! Agora olhe para 'Continuar' para ir ao ultimo passo.";
       return "Teste rapido: fixe o olhar em um cartao ate aparecer o check verde.";
     }
@@ -403,7 +393,6 @@ const EyeTrackingOnboarding = ({ onComplete, preferredMode = null }: Props) => {
 
   const getPrecisionSummary = () => {
     if (precisionScore === null) return null;
-    if (trackingMode === "mouse") return "Modo mouse: nota simulada para demonstracao.";
     if (precisionScore >= 85) return "Excelente alinhamento do olhar.";
     if (precisionScore >= 70) return "Boa precisao para continuar o teste.";
     return "Precisao moderada. Vale repetir com melhor luz para testar.";
@@ -503,9 +492,9 @@ const EyeTrackingOnboarding = ({ onComplete, preferredMode = null }: Props) => {
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
                     className="w-full px-6 py-3 rounded-2xl border-2 border-primary/30 bg-card text-primary font-extrabold shadow-sm"
-                    onClick={startMouseMode}
+                    onClick={skipCalibration}
                   >
-                    Testar sem camera (modo mouse)
+                    Continuar sem calibracao (mouse/touch)
                   </motion.button>
                 )}
 
@@ -532,8 +521,8 @@ const EyeTrackingOnboarding = ({ onComplete, preferredMode = null }: Props) => {
                   <div
                     data-target={`dot-${dot.id}`}
                     className="relative w-16 h-16 sm:w-24 sm:h-24 rounded-full flex items-center justify-center cursor-pointer"
-                    onMouseEnter={() => trackingMode === "mouse" && handleDotHover(dot.id)}
-                    onMouseLeave={() => trackingMode === "mouse" && setIsHovering(false)}
+                    onMouseEnter={() => handleDotHover(dot.id)}
+                    onMouseLeave={() => setIsHovering(false)}
                   >
                     <svg className="absolute inset-0 w-full h-full -rotate-90">
                       <circle cx="50%" cy="50%" r="40%" fill="none" stroke="hsl(var(--primary) / 0.2)" strokeWidth="3" />
@@ -573,10 +562,10 @@ const EyeTrackingOnboarding = ({ onComplete, preferredMode = null }: Props) => {
                         isLocked ? "border-green-500 bg-green-50 scale-105" : isActive ? "border-primary scale-105" : "border-transparent"
                       }`}
                       onMouseEnter={() => {
-                        if (trackingMode === "mouse" && lockedCard === null) setDemoCardActive(i);
+                        if (lockedCard === null) setDemoCardActive(i);
                       }}
                       onMouseLeave={() => {
-                        if (trackingMode === "mouse" && lockedCard === null) setDemoCardActive(null);
+                        if (lockedCard === null) setDemoCardActive(null);
                       }}
                     >
                       <span className="text-3xl sm:text-4xl">{card.emoji}</span>
@@ -603,7 +592,7 @@ const EyeTrackingOnboarding = ({ onComplete, preferredMode = null }: Props) => {
                 className={`mt-2 px-8 py-3 rounded-2xl border-2 transition-all ${
                   lockedCard !== null ? "opacity-100 cursor-pointer" : "opacity-40 pointer-events-none"
                 } ${lookingAt === "continue-btn" ? "bg-primary/30 border-primary" : "bg-primary/10 border-primary/30"}`}
-                onMouseEnter={() => trackingMode === "mouse" && lockedCard !== null && setTimeout(() => setStep(3), 800)}
+                onMouseEnter={() => lockedCard !== null && setTimeout(() => setStep(3), 800)}
               >
                 <p className="text-primary font-bold">Continuar {"\u2192"}</p>
               </motion.div>
@@ -630,10 +619,10 @@ const EyeTrackingOnboarding = ({ onComplete, preferredMode = null }: Props) => {
                 data-target="finish-btn"
                 className="relative mt-4 px-10 py-4 bg-primary rounded-2xl border-2 border-transparent transition-all overflow-hidden cursor-pointer"
                 onMouseEnter={() => {
-                  if (trackingMode === "mouse") setLookingAt("finish-btn");
+                  setLookingAt("finish-btn");
                 }}
                 onMouseLeave={() => {
-                  if (trackingMode === "mouse") setLookingAt(null);
+                  setLookingAt(null);
                 }}
                 onClick={completeOnboarding}
               >
@@ -651,4 +640,3 @@ const EyeTrackingOnboarding = ({ onComplete, preferredMode = null }: Props) => {
 };
 
 export default EyeTrackingOnboarding;
-

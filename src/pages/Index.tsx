@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { LayoutGrid, ScanEye, Sparkles } from "lucide-react";
@@ -6,7 +6,8 @@ import EyeTrackingOnboarding from "@/components/EyeTrackingOnboarding";
 import CategoryCard from "@/components/CategoryCard";
 import BottomNav from "@/components/BottomNav";
 import EyeTrackingRuntime from "@/components/EyeTrackingRuntime";
-import { useTrackingMode, type TrackingMode } from "@/context/TrackingModeContext";
+import { type TrackingMode, useTrackingMode } from "@/context/TrackingModeContext";
+import { useTelemetry } from "@/context/TelemetryContext";
 
 import characterThumbsup from "@/assets/character-thumbsup.png";
 import characterWave from "@/assets/character-wave.png";
@@ -16,26 +17,42 @@ import characterSmile from "@/assets/character-smile.png";
 const Index = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const screenParam = searchParams.get("screen");
-  const modeParam = searchParams.get("mode");
-  const preferredCalibrationMode: TrackingMode | null = modeParam === "camera" || modeParam === "mouse" ? modeParam : null;
   const screen: "home" | "calibration" | "app" =
     screenParam === "calibration" || screenParam === "app" ? screenParam : "home";
   const [greeting, setGreeting] = useState("Bom dia!");
   const navigate = useNavigate();
-  const { trackingMode, setTrackingMode } = useTrackingMode();
+  const { trackingMode, setTrackingMode, hasCalibratedEyeTracking, setHasCalibratedEyeTracking } = useTrackingMode();
+  const { startSession, markNavigationStarted, markModeChange, finalizeSession } = useTelemetry();
+  const previousScreenRef = useRef(screen);
 
-  const setScreen = (nextScreen: "home" | "calibration" | "app", mode?: TrackingMode) => {
+  const eyeTrackingActive = trackingMode === "camera";
+
+  const applyTrackingMode = (mode: TrackingMode | null) => {
+    markModeChange(mode === "camera" ? "camera" : "touch");
+    setTrackingMode(mode);
+  };
+
+  const setScreen = (nextScreen: "home" | "calibration" | "app") => {
     if (nextScreen === "home") {
       setSearchParams({});
       return;
     }
 
-    if (nextScreen === "calibration" && mode) {
-      setSearchParams({ screen: nextScreen, mode });
+    setSearchParams({ screen: nextScreen });
+  };
+
+  const handleEyeTrackingToggle = () => {
+    if (eyeTrackingActive) {
+      applyTrackingMode(null);
       return;
     }
 
-    setSearchParams({ screen: nextScreen });
+    if (hasCalibratedEyeTracking) {
+      applyTrackingMode("camera");
+      return;
+    }
+
+    setScreen("calibration");
   };
 
   useEffect(() => {
@@ -44,6 +61,30 @@ const Index = () => {
     else if (hour < 18) setGreeting("Boa tarde!");
     else setGreeting("Boa noite!");
   }, []);
+
+  useEffect(() => {
+    // Compatibilidade com estado antigo salvo no navegador.
+    if (trackingMode === "mouse") {
+      setTrackingMode(null);
+    }
+  }, [setTrackingMode, trackingMode]);
+
+  useEffect(() => {
+    if (screen === "calibration" || screen === "app") {
+      startSession();
+    }
+
+    if (screen === "app") {
+      markNavigationStarted(eyeTrackingActive ? "camera" : "touch");
+    }
+
+    const previousScreen = previousScreenRef.current;
+    if (previousScreen !== "home" && screen === "home") {
+      finalizeSession("returned_home");
+    }
+
+    previousScreenRef.current = screen;
+  }, [eyeTrackingActive, finalizeSession, markNavigationStarted, screen, startSession]);
 
   if (screen === "home") {
     return (
@@ -86,34 +127,45 @@ const Index = () => {
 
             <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-left text-xs sm:text-sm text-foreground">
               <p className="font-extrabold text-primary">Como vamos testar</p>
-              <p>Para o teste real de acessibilidade, o ideal e usar camera.</p>
-              <p>Se preferir, voce pode continuar sem camera usando mouse/touchpad.</p>
+              <p>Voce pode calibrar o Eye Tracking agora, ou entrar sem calibracao usando mouse/touch.</p>
+              <p>A primeira calibracao leva em torno de 2 a 3 minutos.</p>
             </div>
 
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               className="mt-7 w-full rounded-2xl bg-primary text-primary-foreground font-extrabold py-4 shadow-lg"
-              onClick={() => setScreen("calibration", "camera")}
+              onClick={() => {
+                startSession();
+                setScreen("calibration");
+              }}
             >
-              Iniciar teste com camera (recomendado)
+              Fazer calibracao de Eye Tracking
             </motion.button>
 
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               className="mt-3 w-full rounded-2xl border-2 border-primary/30 bg-card py-3 font-bold text-primary"
-              onClick={() => setScreen("calibration", "mouse")}
+              onClick={() => {
+                startSession();
+                applyTrackingMode(null);
+                setScreen("app");
+              }}
             >
-              Continuar sem camera (mouse/touchpad)
+              Iniciar sem calibracao (mouse/touch)
             </motion.button>
 
-            {trackingMode && (
+            {hasCalibratedEyeTracking && (
               <button
                 className="mt-3 w-full rounded-2xl border-2 border-primary/25 bg-card py-3 font-bold text-primary"
-                onClick={() => setScreen("app")}
+                onClick={() => {
+                  startSession();
+                  applyTrackingMode("camera");
+                  setScreen("app");
+                }}
               >
-                Entrar direto no Matraquinha (modo atual)
+                Entrar com Eye Tracking ativo
               </button>
             )}
           </motion.div>
@@ -125,9 +177,12 @@ const Index = () => {
   if (screen === "calibration") {
     return (
       <EyeTrackingOnboarding
-        preferredMode={preferredCalibrationMode}
         onComplete={(mode) => {
-          setTrackingMode(mode);
+          if (mode === "camera") {
+            setHasCalibratedEyeTracking(true);
+          }
+
+          applyTrackingMode(mode);
           setScreen("app");
         }}
       />
@@ -146,11 +201,11 @@ const Index = () => {
           path: "/categoria/dia-a-dia",
         },
         {
-          title: "Meus Cartoes",
-          description: "Cartoes personalizados",
-          image: characterWave,
-          color: "bg-category-pessoal",
-          locked: true,
+          title: "Necessidades Basicas",
+          description: "Banho, banheiro e autocuidado",
+          image: characterSmile,
+          color: "bg-category-necessidades",
+          path: "/categoria/necessidades-basicas",
         },
       ],
     },
@@ -164,10 +219,10 @@ const Index = () => {
           color: "bg-category-emocoes",
         },
         {
-          title: "Necessidades",
-          description: "Pedir o que precisa",
-          image: characterSmile,
-          color: "bg-category-necessidades",
+          title: "Meus Cartoes",
+          description: "Cartoes personalizados",
+          image: characterWave,
+          color: "bg-category-pessoal",
           locked: true,
         },
       ],
@@ -179,12 +234,56 @@ const Index = () => {
       <EyeTrackingRuntime />
 
       <header className="sticky top-0 bg-background/80 backdrop-blur-sm z-20 px-4 py-4 flex items-center justify-between">
-        <div />
+        <div className="w-12" />
         <h1 className="text-xl font-extrabold text-foreground">{greeting}</h1>
         <button className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-accent flex items-center justify-center text-foreground">
           <LayoutGrid className="w-6 h-6 sm:w-7 sm:h-7" />
         </button>
       </header>
+
+      <div className="px-4 max-w-lg mx-auto pt-3">
+        <motion.button
+          whileHover={{ scale: 1.01 }}
+          whileTap={{ scale: 0.99 }}
+          onClick={handleEyeTrackingToggle}
+          className={`w-full rounded-2xl border-2 px-4 py-3 text-left transition-all ${
+            eyeTrackingActive
+              ? "border-transparent bg-[linear-gradient(135deg,hsl(var(--primary)),hsl(var(--accent)))] text-white shadow-[0_14px_35px_hsl(var(--primary)/0.35)]"
+              : "border-primary/25 bg-card text-foreground shadow-sm"
+          }`}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div
+                className={`w-11 h-11 rounded-xl flex items-center justify-center border ${
+                  eyeTrackingActive ? "border-white/35 bg-white/15" : "border-primary/25 bg-primary/10"
+                }`}
+              >
+                <ScanEye className={`w-6 h-6 ${eyeTrackingActive ? "text-white" : "text-primary"}`} />
+              </div>
+
+              <div>
+                <p className={`text-sm font-black ${eyeTrackingActive ? "text-white" : "text-foreground"}`}>Eye Tracking</p>
+                <p className={`text-xs font-semibold ${eyeTrackingActive ? "text-white/90" : "text-muted-foreground"}`}>
+                  {eyeTrackingActive
+                    ? "Ativo. Toque para desativar e continuar no mouse/touch."
+                    : hasCalibratedEyeTracking
+                      ? "Desativado. Toque para ativar novamente."
+                      : "Desativado. Primeira ativacao leva de 2 a 3 min."}
+                </p>
+              </div>
+            </div>
+
+            <div className={`relative w-14 h-8 rounded-full border transition-colors ${eyeTrackingActive ? "border-white/40 bg-white/20" : "border-primary/25 bg-muted/70"}`}>
+              <div
+                className={`absolute top-1 h-6 w-6 rounded-full shadow-md transition-all ${
+                  eyeTrackingActive ? "left-7 bg-white" : "left-1 bg-primary"
+                }`}
+              />
+            </div>
+          </div>
+        </motion.button>
+      </div>
 
       <div className="px-4 max-w-lg mx-auto space-y-8 py-4">
         {categories.map((cat, ci) => (

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, LayoutGrid } from "lucide-react";
 import { motion } from "framer-motion";
 import PictureCard from "@/components/PictureCard";
 import EyeTrackingRuntime from "@/components/EyeTrackingRuntime";
 import BottomNav from "@/components/BottomNav";
+import { useTelemetry } from "@/context/TelemetryContext";
 
 import foodPizza from "@/assets/food-pizza.svg";
 import drinkWater from "@/assets/drink-water.svg";
@@ -13,21 +14,62 @@ import foodBurger from "@/assets/food-burger.svg";
 import foodFruit from "@/assets/food-fruit.svg";
 import drinkCoffee from "@/assets/drink-coffee.svg";
 
+import needPee from "@/assets/need-pee.svg";
+import needPoop from "@/assets/need-poop.svg";
+import needShower from "@/assets/need-shower.svg";
+import needBath from "@/assets/need-bath.svg";
+import needBrush from "@/assets/need-brush.svg";
+import needSleep from "@/assets/need-sleep.svg";
+
 const REPEAT_COOLDOWN_MS = 2500;
 
-const cards = [
-  { label: "PIZZA", image: foodPizza, phrase: "Quero comer pizza." },
-  { label: "AGUA", image: drinkWater, phrase: "Eu quero beber agua." },
-  { label: "SUCO", image: drinkJuice, phrase: "Eu quero beber suco." },
-  { label: "LANCHE", image: foodBurger, phrase: "Quero comer um lanche." },
-  { label: "FRUTA", image: foodFruit, phrase: "Quero comer fruta." },
-  { label: "CAFÉ", image: drinkCoffee, phrase: "Eu quero tomar café." },
-];
+type CommCard = {
+  label: string;
+  image: string;
+  phrase: string;
+};
 
-type DayCard = (typeof cards)[number];
+type CategoryConfig = {
+  title: string;
+  cards: CommCard[];
+};
+
+const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
+  "dia-a-dia": {
+    title: "Dia a Dia",
+    cards: [
+      { label: "PIZZA", image: foodPizza, phrase: "Quero comer pizza." },
+      { label: "AGUA", image: drinkWater, phrase: "Eu quero beber agua." },
+      { label: "SUCO", image: drinkJuice, phrase: "Eu quero beber suco." },
+      { label: "LANCHE", image: foodBurger, phrase: "Quero comer um lanche." },
+      { label: "FRUTA", image: foodFruit, phrase: "Quero comer fruta." },
+      { label: "CAFE", image: drinkCoffee, phrase: "Eu quero tomar cafe." },
+    ],
+  },
+  "necessidades-basicas": {
+    title: "Necessidades Basicas",
+    cards: [
+      { label: "XIXI", image: needPee, phrase: "Quero ir fazer xixi." },
+      { label: "COCO", image: needPoop, phrase: "Quero ir fazer coco." },
+      { label: "BANHO", image: needBath, phrase: "Quero tomar banho." },
+      { label: "CHUVEIRO", image: needShower, phrase: "Quero ir para o chuveiro." },
+      { label: "ESCOVAR", image: needBrush, phrase: "Quero escovar os dentes." },
+      { label: "DORMIR", image: needSleep, phrase: "Quero dormir." },
+    ],
+  },
+};
+
+const TASK_TARGET_BY_CATEGORY: Record<string, string> = {
+  "dia-a-dia": "AGUA",
+  "necessidades-basicas": "BANHO",
+};
 
 const CategoryDetail = () => {
   const navigate = useNavigate();
+  const { categoryId } = useParams<{ categoryId: string }>();
+  const category = categoryId ? CATEGORY_CONFIGS[categoryId] : null;
+  const { startTask, recordSelection } = useTelemetry();
+
   const [selectedCardLabel, setSelectedCardLabel] = useState<string | null>(null);
   const [currentPhrase, setCurrentPhrase] = useState("Selecione um cartao para montar a frase.");
   const speechSupported =
@@ -56,11 +98,12 @@ const CategoryDetail = () => {
   }, []);
 
   const speakCardPhrase = useCallback(
-    (card: DayCard) => {
+    (card: CommCard) => {
       const now = Date.now();
       if (now < (repeatCooldownByCardRef.current[card.label] ?? 0)) return;
 
       if (activeSpeechRef.current?.label === card.label) return;
+      recordSelection(card.label);
 
       setSelectedCardLabel(card.label);
       setCurrentPhrase(card.phrase);
@@ -98,14 +141,25 @@ const CategoryDetail = () => {
       window.speechSynthesis.cancel();
       window.speechSynthesis.speak(utterance);
     },
-    [findPreferredVoice, handleSpeechFinished, speechSupported]
+    [findPreferredVoice, handleSpeechFinished, recordSelection, speechSupported]
   );
+
+  useEffect(() => {
+    if (!category) {
+      navigate("/?screen=app", { replace: true });
+    }
+  }, [category, navigate]);
+
+  useEffect(() => {
+    if (!categoryId || !category) return;
+    const target = TASK_TARGET_BY_CATEGORY[categoryId] ?? category.cards[0]?.label ?? "";
+    startTask(categoryId, target);
+  }, [category, categoryId, startTask]);
 
   useEffect(() => {
     if (!speechSupported) return;
 
     const handleVoicesChanged = () => {
-      // Em alguns navegadores, a lista de vozes carrega apos a primeira renderizacao.
       window.speechSynthesis.getVoices();
     };
 
@@ -127,6 +181,8 @@ const CategoryDetail = () => {
     navigate("/?screen=app");
   };
 
+  if (!category) return null;
+
   return (
     <div className="min-h-screen bg-background pb-20">
       <EyeTrackingRuntime />
@@ -138,7 +194,7 @@ const CategoryDetail = () => {
         >
           <ArrowLeft className="w-6 h-6 sm:w-7 sm:h-7" />
         </button>
-        <h1 className="text-lg font-extrabold text-foreground">Dia a Dia</h1>
+        <h1 className="text-lg font-extrabold text-foreground">{category.title}</h1>
         <button className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-accent flex items-center justify-center text-foreground">
           <LayoutGrid className="w-6 h-6 sm:w-7 sm:h-7" />
         </button>
@@ -156,7 +212,7 @@ const CategoryDetail = () => {
         animate={{ opacity: 1 }}
         transition={{ staggerChildren: 0.05 }}
       >
-        {cards.map((card, i) => (
+        {category.cards.map((card, i) => (
           <motion.div
             key={card.label}
             initial={{ opacity: 0, y: 20 }}
