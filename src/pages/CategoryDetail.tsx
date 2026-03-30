@@ -78,6 +78,7 @@ const CategoryDetail = () => {
   const speechSessionRef = useRef(0);
   const activeSpeechRef = useRef<{ session: number; label: string } | null>(null);
   const hasUnlockedSpeechRef = useRef(false);
+  const pendingPhraseRef = useRef<string | null>(null);
 
   const findPreferredVoice = useCallback(() => {
     if (!speechSupported) return null;
@@ -137,9 +138,13 @@ const CategoryDetail = () => {
       activeSpeechRef.current = { session, label: card.label };
 
       utterance.onend = () => {
+        pendingPhraseRef.current = null;
         handleSpeechFinished(session, card.label);
       };
-      utterance.onerror = () => {
+      utterance.onerror = (event) => {
+        if (event.error === "not-allowed" || event.error === "audio-busy") {
+          pendingPhraseRef.current = card.phrase;
+        }
         handleSpeechFinished(session, card.label);
       };
 
@@ -165,7 +170,7 @@ const CategoryDetail = () => {
     if (!speechSupported) return;
 
     const unlockSpeech = () => {
-      if (hasUnlockedSpeechRef.current) return;
+      if (hasUnlockedSpeechRef.current && !pendingPhraseRef.current) return;
 
       const unlockUtterance = new SpeechSynthesisUtterance("ok");
       unlockUtterance.lang = "pt-BR";
@@ -173,6 +178,16 @@ const CategoryDetail = () => {
       window.speechSynthesis.speak(unlockUtterance);
       window.speechSynthesis.cancel();
       hasUnlockedSpeechRef.current = true;
+
+      if (pendingPhraseRef.current) {
+        const replayUtterance = new SpeechSynthesisUtterance(pendingPhraseRef.current);
+        replayUtterance.lang = "pt-BR";
+        replayUtterance.rate = 0.95;
+        replayUtterance.pitch = 1;
+        replayUtterance.volume = 1;
+        window.speechSynthesis.speak(replayUtterance);
+        pendingPhraseRef.current = null;
+      }
     };
 
     const handleVoicesChanged = () => {
@@ -180,12 +195,18 @@ const CategoryDetail = () => {
     };
 
     window.speechSynthesis.getVoices();
-    window.addEventListener("pointerdown", unlockSpeech, { once: true });
+    unlockSpeech();
+    window.addEventListener("pointerdown", unlockSpeech);
+    window.addEventListener("touchstart", unlockSpeech);
+    window.addEventListener("click", unlockSpeech);
     window.speechSynthesis.addEventListener("voiceschanged", handleVoicesChanged);
     return () => {
       window.speechSynthesis.cancel();
       activeSpeechRef.current = null;
+      pendingPhraseRef.current = null;
       window.removeEventListener("pointerdown", unlockSpeech);
+      window.removeEventListener("touchstart", unlockSpeech);
+      window.removeEventListener("click", unlockSpeech);
       window.speechSynthesis.removeEventListener("voiceschanged", handleVoicesChanged);
     };
   }, [speechSupported]);

@@ -3,7 +3,7 @@ import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 import { useTrackingMode } from "@/context/TrackingModeContext";
 import GazeCursor from "./GazeCursor";
 
-const DWELL_TIME_MS = 1200;
+const DWELL_TIME_MS = 1600;
 const CLICK_COOLDOWN_MS = 900;
 
 const findClickableTarget = (element: Element | null): HTMLElement | null => {
@@ -39,6 +39,7 @@ const EyeTrackingRuntime = () => {
   const smoothRef = useRef({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
   const activeTargetElementRef = useRef<HTMLElement | null>(null);
   const clickCooldownUntilRef = useRef<number>(0);
+  const lastTargetIdRef = useRef<string | null>(null);
 
   const [cursorPos, setCursorPos] = useState({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
   const [isLoading, setIsLoading] = useState(false);
@@ -163,12 +164,20 @@ const EyeTrackingRuntime = () => {
 
               const elementAtPoint = document.elementFromPoint(smoothRef.current.x, smoothRef.current.y);
               const clickableTarget = findClickableTarget(elementAtPoint);
+              const nextTargetId = clickableTarget ? getTargetId(clickableTarget) : null;
+
+              if (nextTargetId !== lastTargetIdRef.current) {
+                lastTargetIdRef.current = nextTargetId;
+                setDwellTime(0);
+              }
 
               activeTargetElementRef.current = clickableTarget;
-              setActiveTargetId(clickableTarget ? getTargetId(clickableTarget) : null);
+              setActiveTargetId(nextTargetId);
             } else {
               setHasDetectedFace(false);
               activeTargetElementRef.current = null;
+              lastTargetIdRef.current = null;
+              setDwellTime(0);
               setActiveTargetId(null);
             }
           }
@@ -190,6 +199,7 @@ const EyeTrackingRuntime = () => {
     return () => {
       isCancelled = true;
       cleanupRuntime();
+      lastTargetIdRef.current = null;
       setDwellTime(0);
       setActiveTargetId(null);
     };

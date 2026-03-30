@@ -70,17 +70,17 @@ const Index = () => {
   }, [setTrackingMode, trackingMode]);
 
   useEffect(() => {
-    if (screen === "calibration" || screen === "app") {
+    const previousScreen = previousScreenRef.current;
+    if (previousScreen === "home" && screen !== "home") {
       startSession();
+    }
+
+    if (previousScreen !== "home" && screen === "home") {
+      finalizeSession("returned_home");
     }
 
     if (screen === "app") {
       markNavigationStarted(eyeTrackingActive ? "camera" : "touch");
-    }
-
-    const previousScreen = previousScreenRef.current;
-    if (previousScreen !== "home" && screen === "home") {
-      finalizeSession("returned_home");
     }
 
     previousScreenRef.current = screen;
