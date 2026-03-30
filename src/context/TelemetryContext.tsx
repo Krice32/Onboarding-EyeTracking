@@ -36,7 +36,7 @@ interface TelemetryContextValue {
   markNavigationStarted: (mode: SessionMode) => void;
   markModeChange: (nextMode: SessionMode) => void;
   startTask: (taskId: string, expectedLabel: string) => void;
-  recordSelection: (selectedLabel: string) => void;
+  recordSelection: (selectedLabel: string) => boolean;
   finalizeSession: (reason?: string) => void;
 }
 
@@ -188,8 +188,8 @@ export const TelemetryProvider = ({ children }: { children: ReactNode }) => {
 
   const recordSelection = useCallback((selectedLabel: string) => {
     const session = sessionRef.current;
-    if (!session || finalizedRef.current) return;
-    if (session.task_started_at_ms === null || session.task_completed) return;
+    if (!session || finalizedRef.current) return false;
+    if (session.task_started_at_ms === null || session.task_completed) return false;
 
     const expectedLabel = session.task_expected_label || selectedLabel;
     if (selectedLabel === expectedLabel) {
@@ -197,10 +197,11 @@ export const TelemetryProvider = ({ children }: { children: ReactNode }) => {
       session.first_correct_selection_ms = elapsed;
       session.task_duration_ms = elapsed;
       session.task_completed = true;
-      return;
+      return true;
     }
 
     session.selection_errors_count += 1;
+    return false;
   }, []);
 
   const finalizeSession = useCallback((reason = "manual") => {
@@ -251,10 +252,18 @@ export const TelemetryProvider = ({ children }: { children: ReactNode }) => {
       finalizeSession("pagehide");
     };
 
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        finalizeSession("hidden");
+      }
+    };
+
     window.addEventListener("pagehide", onPageHide);
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
     return () => {
       window.removeEventListener("pagehide", onPageHide);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [finalizeSession]);
 
@@ -283,5 +292,3 @@ export const useTelemetry = () => {
   }
   return context;
 };
-
-

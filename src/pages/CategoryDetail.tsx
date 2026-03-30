@@ -68,7 +68,7 @@ const CategoryDetail = () => {
   const navigate = useNavigate();
   const { categoryId } = useParams<{ categoryId: string }>();
   const category = categoryId ? CATEGORY_CONFIGS[categoryId] : null;
-  const { startTask, recordSelection } = useTelemetry();
+  const { startTask, recordSelection, finalizeSession } = useTelemetry();
 
   const [selectedCardLabel, setSelectedCardLabel] = useState<string | null>(null);
   const [currentPhrase, setCurrentPhrase] = useState("Selecione um cartao para montar a frase.");
@@ -77,6 +77,7 @@ const CategoryDetail = () => {
   const repeatCooldownByCardRef = useRef<Record<string, number>>({});
   const speechSessionRef = useRef(0);
   const activeSpeechRef = useRef<{ session: number; label: string } | null>(null);
+  const hasUnlockedSpeechRef = useRef(false);
 
   const findPreferredVoice = useCallback(() => {
     if (!speechSupported) return null;
@@ -103,7 +104,10 @@ const CategoryDetail = () => {
       if (now < (repeatCooldownByCardRef.current[card.label] ?? 0)) return;
 
       if (activeSpeechRef.current?.label === card.label) return;
-      recordSelection(card.label);
+      const completedTask = recordSelection(card.label);
+      if (completedTask) {
+        finalizeSession("task_completed");
+      }
 
       setSelectedCardLabel(card.label);
       setCurrentPhrase(card.phrase);
@@ -127,6 +131,7 @@ const CategoryDetail = () => {
         utterance.voice = preferredVoice;
       }
 
+      window.speechSynthesis.resume();
       const session = speechSessionRef.current + 1;
       speechSessionRef.current = session;
       activeSpeechRef.current = { session, label: card.label };
@@ -141,7 +146,7 @@ const CategoryDetail = () => {
       window.speechSynthesis.cancel();
       window.speechSynthesis.speak(utterance);
     },
-    [findPreferredVoice, handleSpeechFinished, recordSelection, speechSupported]
+    [finalizeSession, findPreferredVoice, handleSpeechFinished, recordSelection, speechSupported]
   );
 
   useEffect(() => {
@@ -159,15 +164,28 @@ const CategoryDetail = () => {
   useEffect(() => {
     if (!speechSupported) return;
 
+    const unlockSpeech = () => {
+      if (hasUnlockedSpeechRef.current) return;
+
+      const unlockUtterance = new SpeechSynthesisUtterance("ok");
+      unlockUtterance.lang = "pt-BR";
+      unlockUtterance.volume = 0;
+      window.speechSynthesis.speak(unlockUtterance);
+      window.speechSynthesis.cancel();
+      hasUnlockedSpeechRef.current = true;
+    };
+
     const handleVoicesChanged = () => {
       window.speechSynthesis.getVoices();
     };
 
     window.speechSynthesis.getVoices();
+    window.addEventListener("pointerdown", unlockSpeech, { once: true });
     window.speechSynthesis.addEventListener("voiceschanged", handleVoicesChanged);
     return () => {
       window.speechSynthesis.cancel();
       activeSpeechRef.current = null;
+      window.removeEventListener("pointerdown", unlockSpeech);
       window.speechSynthesis.removeEventListener("voiceschanged", handleVoicesChanged);
     };
   }, [speechSupported]);
