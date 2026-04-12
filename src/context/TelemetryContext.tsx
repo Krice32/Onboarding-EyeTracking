@@ -1,4 +1,6 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef } from "react";
+import { PRIVACY_KEYS } from "@/constants/privacy";
+import { usePrivacyConsent } from "@/context/PrivacyConsentContext";
 
 type SessionMode = "camera" | "touch";
 
@@ -40,7 +42,6 @@ interface TelemetryContextValue {
   finalizeSession: (reason?: string) => void;
 }
 
-const PARTICIPANT_STORAGE_KEY = "matraquinha_participant_code";
 const WEB_APP_URL = (import.meta.env.VITE_ANALYTICS_WEB_APP_URL ?? "").trim();
 const WEB_APP_TOKEN = (import.meta.env.VITE_ANALYTICS_TOKEN ?? "").trim();
 
@@ -51,12 +52,17 @@ const createSessionId = () => `sess_${Date.now()}_${Math.random().toString(36).s
 const readOrCreateParticipantCode = () => {
   if (typeof window === "undefined") return "P-LOCAL";
 
-  const existing = window.localStorage.getItem(PARTICIPANT_STORAGE_KEY);
+  const existing = window.localStorage.getItem(PRIVACY_KEYS.participantCode);
   if (existing) return existing;
 
   const generated = `P-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-  window.localStorage.setItem(PARTICIPANT_STORAGE_KEY, generated);
+  window.localStorage.setItem(PRIVACY_KEYS.participantCode, generated);
   return generated;
+};
+
+const clearParticipantCode = () => {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(PRIVACY_KEYS.participantCode);
 };
 
 const buildInitialState = (): SessionRuntimeState => {
@@ -115,15 +121,17 @@ const postSession = (session: SessionMetrics) => {
 };
 
 export const TelemetryProvider = ({ children }: { children: ReactNode }) => {
+  const { canCollectAnalytics } = usePrivacyConsent();
   const sessionRef = useRef<SessionRuntimeState | null>(null);
   const finalizedRef = useRef(false);
 
   const ensureSession = useCallback(() => {
+    if (!canCollectAnalytics) return null;
     if (sessionRef.current && !finalizedRef.current) return sessionRef.current;
     sessionRef.current = buildInitialState();
     finalizedRef.current = false;
     return sessionRef.current;
-  }, []);
+  }, [canCollectAnalytics]);
 
   const startSession = useCallback(() => {
     ensureSession();
@@ -131,6 +139,8 @@ export const TelemetryProvider = ({ children }: { children: ReactNode }) => {
 
   const markCalibrationStarted = useCallback(() => {
     const session = ensureSession();
+    if (!session) return;
+
     session.calibration_started = true;
     if (session.calibration_started_at_ms === null) {
       session.calibration_started_at_ms = Date.now();
@@ -154,6 +164,8 @@ export const TelemetryProvider = ({ children }: { children: ReactNode }) => {
   const markNavigationStarted = useCallback(
     (mode: SessionMode) => {
       const session = ensureSession();
+      if (!session) return;
+
       if (!session.started_mode) {
         session.started_mode = mode;
       }
@@ -177,6 +189,7 @@ export const TelemetryProvider = ({ children }: { children: ReactNode }) => {
   const startTask = useCallback(
     (taskId: string, expectedLabel: string) => {
       const session = ensureSession();
+      if (!session) return;
       if (session.task_started_at_ms !== null) return;
 
       session.task_id = taskId;
@@ -204,48 +217,60 @@ export const TelemetryProvider = ({ children }: { children: ReactNode }) => {
     return false;
   }, []);
 
-  const finalizeSession = useCallback((reason = "manual") => {
-    const session = sessionRef.current;
-    if (!session || finalizedRef.current) return;
+  const finalizeSession = useCallback(
+    (reason = "manual") => {
+      if (!canCollectAnalytics) return;
 
-    session.total_navigation_ms = Date.now() - session.started_at_ms;
+      const session = sessionRef.current;
+      if (!session || finalizedRef.current) return;
 
-    if (!session.started_mode) {
-      session.started_mode = session.current_mode;
-    }
+      session.total_navigation_ms = Date.now() - session.started_at_ms;
 
-    if (session.started_mode === "camera") {
-      const endedWithCamera = session.current_mode === "camera";
-      session.abandoned_eye_tracking_before_end = !endedWithCamera;
-      session.used_eye_tracking_until_end = endedWithCamera;
-    }
+      if (!session.started_mode) {
+        session.started_mode = session.current_mode;
+      }
 
-    const payload: SessionMetrics = {
-      session_id: session.session_id,
-      participant_code: session.participant_code,
-      started_at: session.started_at,
-      calibration_started: session.calibration_started,
-      calibration_completed: session.calibration_completed,
-      calibration_duration_ms: session.calibration_duration_ms,
-      started_mode: session.started_mode,
-      task_completed: session.task_completed,
-      task_duration_ms: session.task_duration_ms,
-      selection_errors_count: session.selection_errors_count,
-      first_correct_selection_ms: session.first_correct_selection_ms,
-      migrated_to_touch: session.migrated_to_touch,
-      total_navigation_ms: session.total_navigation_ms,
-      abandoned_eye_tracking_before_end: session.abandoned_eye_tracking_before_end,
-      used_eye_tracking_until_end: session.used_eye_tracking_until_end,
-    };
+      if (session.started_mode === "camera") {
+        const endedWithCamera = session.current_mode === "camera";
+        session.abandoned_eye_tracking_before_end = !endedWithCamera;
+        session.used_eye_tracking_until_end = endedWithCamera;
+      }
 
-    postSession(payload);
-    finalizedRef.current = true;
+      const payload: SessionMetrics = {
+        session_id: session.session_id,
+        participant_code: session.participant_code,
+        started_at: session.started_at,
+        calibration_started: session.calibration_started,
+        calibration_completed: session.calibration_completed,
+        calibration_duration_ms: session.calibration_duration_ms,
+        started_mode: session.started_mode,
+        task_completed: session.task_completed,
+        task_duration_ms: session.task_duration_ms,
+        selection_errors_count: session.selection_errors_count,
+        first_correct_selection_ms: session.first_correct_selection_ms,
+        migrated_to_touch: session.migrated_to_touch,
+        total_navigation_ms: session.total_navigation_ms,
+        abandoned_eye_tracking_before_end: session.abandoned_eye_tracking_before_end,
+        used_eye_tracking_until_end: session.used_eye_tracking_until_end,
+      };
+
+      postSession(payload);
+      finalizedRef.current = true;
+      sessionRef.current = null;
+
+      if (reason !== "pagehide") {
+        console.info(`Sessao finalizada e enviada (${reason}).`);
+      }
+    },
+    [canCollectAnalytics]
+  );
+
+  useEffect(() => {
+    if (canCollectAnalytics) return;
     sessionRef.current = null;
-
-    if (reason !== "pagehide") {
-      console.info(`Sessao finalizada e enviada (${reason}).`);
-    }
-  }, []);
+    finalizedRef.current = false;
+    clearParticipantCode();
+  }, [canCollectAnalytics]);
 
   useEffect(() => {
     const onPageHide = () => {

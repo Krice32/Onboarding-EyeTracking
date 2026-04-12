@@ -1,16 +1,29 @@
 import { Home, Image, LayoutGrid, Images, Users } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 const navItems = [
-  { icon: Home, label: "Principal", active: true, path: "/?screen=app" },
-  { icon: Image, label: "Fotos Reais", active: false },
-  { icon: LayoutGrid, label: "Explorar", active: false },
-  { icon: Images, label: "Meus Cartoes", active: false },
-  { icon: Users, label: "Pais", active: false },
+  { icon: Home, label: "Principal", path: "/?screen=app" },
+  { icon: Image, label: "Fotos Reais" },
+  { icon: LayoutGrid, label: "Explorar", path: "/explorar" },
+  { icon: Images, label: "Meus Cartoes" },
+  { icon: Users, label: "Pais" },
 ];
 
 const BottomNav = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const isActive = (label: string) => {
+    if (label === "Principal") {
+      return location.pathname === "/" || location.pathname.startsWith("/categoria/");
+    }
+
+    if (label === "Explorar") {
+      return location.pathname.startsWith("/explorar") || location.pathname.startsWith("/desafio/");
+    }
+
+    return false;
+  };
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 bg-card border-t border-border z-30">
@@ -20,7 +33,7 @@ const BottomNav = () => {
             key={item.label}
             onClick={() => item.path && navigate(item.path)}
             className={`flex flex-col items-center justify-center gap-1 px-3 py-2 rounded-xl min-w-[4.6rem] min-h-[4rem] sm:min-w-[5.2rem] sm:min-h-[4.3rem] transition-colors ${
-              item.active ? "text-primary" : "text-muted-foreground"
+              isActive(item.label) ? "text-primary" : "text-muted-foreground"
             }`}
           >
             <item.icon className="w-6 h-6 sm:w-7 sm:h-7" />

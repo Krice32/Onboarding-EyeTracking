@@ -168,6 +168,14 @@ const Index = () => {
                 Entrar com Eye Tracking ativo
               </button>
             )}
+
+            <button
+              type="button"
+              className="mt-4 w-full text-xs font-bold text-primary underline-offset-2 hover:underline"
+              onClick={() => navigate("/privacidade")}
+            >
+              Ler aviso de privacidade e gerenciar consentimento
+            </button>
           </motion.div>
         </main>
       </div>
@@ -283,6 +291,14 @@ const Index = () => {
             </div>
           </div>
         </motion.button>
+
+        <button
+          type="button"
+          className="mt-3 text-xs font-bold text-primary underline-offset-2 hover:underline"
+          onClick={() => navigate("/privacidade")}
+        >
+          Privacidade e dados
+        </button>
       </div>
 
       <div className="px-4 max-w-lg mx-auto space-y-8 py-4">
@@ -322,3 +338,4 @@ const Index = () => {
 };
 
 export default Index;
+
