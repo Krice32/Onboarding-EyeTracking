@@ -22,7 +22,7 @@ const Index = () => {
   const [greeting, setGreeting] = useState("Bom dia!");
   const navigate = useNavigate();
   const { trackingMode, setTrackingMode, hasCalibratedEyeTracking, setHasCalibratedEyeTracking } = useTrackingMode();
-  const { startSession, markNavigationStarted, markModeChange, finalizeSession } = useTelemetry();
+  const { startSession, markNavigationStarted, markModeChange } = useTelemetry();
   const previousScreenRef = useRef(screen);
 
   const eyeTrackingActive = trackingMode === "camera";
@@ -75,16 +75,12 @@ const Index = () => {
       startSession();
     }
 
-    if (previousScreen !== "home" && screen === "home") {
-      finalizeSession("returned_home");
-    }
-
     if (screen === "app") {
       markNavigationStarted(eyeTrackingActive ? "camera" : "touch");
     }
 
     previousScreenRef.current = screen;
-  }, [eyeTrackingActive, finalizeSession, markNavigationStarted, screen, startSession]);
+  }, [eyeTrackingActive, markNavigationStarted, screen, startSession]);
 
   if (screen === "home") {
     return (

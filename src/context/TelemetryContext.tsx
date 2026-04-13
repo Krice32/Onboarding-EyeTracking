@@ -39,6 +39,7 @@ interface TelemetryContextValue {
   markModeChange: (nextMode: SessionMode) => void;
   startTask: (taskId: string, expectedLabel: string) => void;
   recordSelection: (selectedLabel: string) => boolean;
+  consumeFeedbackPrompt: () => boolean;
   finalizeSession: (reason?: string) => void;
 }
 
@@ -124,12 +125,14 @@ export const TelemetryProvider = ({ children }: { children: ReactNode }) => {
   const { canCollectAnalytics } = usePrivacyConsent();
   const sessionRef = useRef<SessionRuntimeState | null>(null);
   const finalizedRef = useRef(false);
+  const feedbackPromptShownRef = useRef(false);
 
   const ensureSession = useCallback(() => {
     if (!canCollectAnalytics) return null;
     if (sessionRef.current && !finalizedRef.current) return sessionRef.current;
     sessionRef.current = buildInitialState();
     finalizedRef.current = false;
+    feedbackPromptShownRef.current = false;
     return sessionRef.current;
   }, [canCollectAnalytics]);
 
@@ -217,6 +220,12 @@ export const TelemetryProvider = ({ children }: { children: ReactNode }) => {
     return false;
   }, []);
 
+  const consumeFeedbackPrompt = useCallback(() => {
+    if (feedbackPromptShownRef.current) return false;
+    feedbackPromptShownRef.current = true;
+    return true;
+  }, []);
+
   const finalizeSession = useCallback(
     (reason = "manual") => {
       if (!canCollectAnalytics) return;
@@ -269,6 +278,7 @@ export const TelemetryProvider = ({ children }: { children: ReactNode }) => {
     if (canCollectAnalytics) return;
     sessionRef.current = null;
     finalizedRef.current = false;
+    feedbackPromptShownRef.current = false;
     clearParticipantCode();
   }, [canCollectAnalytics]);
 
@@ -302,6 +312,7 @@ export const TelemetryProvider = ({ children }: { children: ReactNode }) => {
         markModeChange,
         startTask,
         recordSelection,
+        consumeFeedbackPrompt,
         finalizeSession,
       }}
     >
@@ -317,3 +328,4 @@ export const useTelemetry = () => {
   }
   return context;
 };
+

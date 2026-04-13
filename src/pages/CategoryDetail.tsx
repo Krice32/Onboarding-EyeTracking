@@ -5,6 +5,14 @@ import { motion } from "framer-motion";
 import PictureCard from "@/components/PictureCard";
 import EyeTrackingRuntime from "@/components/EyeTrackingRuntime";
 import BottomNav from "@/components/BottomNav";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useTelemetry } from "@/context/TelemetryContext";
 
 import foodPizza from "@/assets/food-pizza.svg";
@@ -59,18 +67,18 @@ const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
   },
 };
 
-const TASK_TARGET_BY_CATEGORY: Record<string, string> = {
-  "dia-a-dia": "AGUA",
-  "necessidades-basicas": "BANHO",
-};
+const TASK_ANY_CARD_CATEGORIES = new Set(["dia-a-dia", "necessidades-basicas"]);
+const FEEDBACK_FORMS_URL = "https://forms.gle/8a7jwoPHeKM6MVf97";
 
 const CategoryDetail = () => {
   const navigate = useNavigate();
   const { categoryId } = useParams<{ categoryId: string }>();
   const category = categoryId ? CATEGORY_CONFIGS[categoryId] : null;
-  const { startTask, recordSelection, finalizeSession } = useTelemetry();
+  const { startTask, recordSelection, consumeFeedbackPrompt } = useTelemetry();
+  const isAnyCardTask = categoryId ? TASK_ANY_CARD_CATEGORIES.has(categoryId) : false;
 
   const [selectedCardLabel, setSelectedCardLabel] = useState<string | null>(null);
+  const [isCompletionDialogOpen, setIsCompletionDialogOpen] = useState(false);
   const [currentPhrase, setCurrentPhrase] = useState("Selecione um cartao para montar a frase.");
   const speechSupported =
     typeof window !== "undefined" && "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
@@ -79,6 +87,7 @@ const CategoryDetail = () => {
   const activeSpeechRef = useRef<{ session: number; label: string } | null>(null);
   const hasUnlockedSpeechRef = useRef(false);
   const pendingPhraseRef = useRef<string | null>(null);
+  const localTaskCompletedRef = useRef(false);
 
   const findPreferredVoice = useCallback(() => {
     if (!speechSupported) return null;
@@ -106,8 +115,13 @@ const CategoryDetail = () => {
 
       if (activeSpeechRef.current?.label === card.label) return;
       const completedTask = recordSelection(card.label);
-      if (completedTask) {
-        finalizeSession("task_completed");
+      const taskCompletedForUi = completedTask || (isAnyCardTask && !localTaskCompletedRef.current);
+
+      if (taskCompletedForUi) {
+        localTaskCompletedRef.current = true;
+        if (consumeFeedbackPrompt()) {
+          setIsCompletionDialogOpen(true);
+        }
       }
 
       setSelectedCardLabel(card.label);
@@ -151,7 +165,7 @@ const CategoryDetail = () => {
       window.speechSynthesis.cancel();
       window.speechSynthesis.speak(utterance);
     },
-    [finalizeSession, findPreferredVoice, handleSpeechFinished, recordSelection, speechSupported]
+    [consumeFeedbackPrompt, findPreferredVoice, handleSpeechFinished, isAnyCardTask, recordSelection, speechSupported]
   );
 
   useEffect(() => {
@@ -162,8 +176,12 @@ const CategoryDetail = () => {
 
   useEffect(() => {
     if (!categoryId || !category) return;
-    const target = TASK_TARGET_BY_CATEGORY[categoryId] ?? category.cards[0]?.label ?? "";
-    startTask(categoryId, target);
+
+    localTaskCompletedRef.current = false;
+    setIsCompletionDialogOpen(false);
+
+    const expectedLabel = TASK_ANY_CARD_CATEGORIES.has(categoryId) ? "" : category.cards[0]?.label ?? "";
+    startTask(categoryId, expectedLabel);
   }, [category, categoryId, startTask]);
 
   useEffect(() => {
@@ -270,9 +288,40 @@ const CategoryDetail = () => {
         ))}
       </motion.div>
 
+      <Dialog open={isCompletionDialogOpen} onOpenChange={setIsCompletionDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Parabens! Tarefa concluida</DialogTitle>
+            <DialogDescription>
+              Obrigado por testar o prototipo. Se quiser, voce pode responder um formulario rapido com feedback qualitativo.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="sm:justify-end gap-2">
+            <button
+              type="button"
+              className="rounded-xl border border-primary/30 bg-card px-4 py-2 text-sm font-bold text-primary"
+              onClick={() => setIsCompletionDialogOpen(false)}
+            >
+              Continuar navegando
+            </button>
+            <button
+              type="button"
+              className="rounded-xl bg-primary px-4 py-2 text-sm font-extrabold text-primary-foreground"
+              onClick={() => {
+                window.open(FEEDBACK_FORMS_URL, "_blank", "noopener,noreferrer");
+                setIsCompletionDialogOpen(false);
+              }}
+            >
+              Responder forms
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <BottomNav />
     </div>
   );
 };
 
 export default CategoryDetail;
+

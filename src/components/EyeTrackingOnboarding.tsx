@@ -108,7 +108,6 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
 
   const startCameraMode = useCallback(async () => {
     startSession();
-    markCalibrationStarted();
     stopCameraTracking();
     setIsInitializingCamera(true);
     setCameraError(null);
@@ -151,6 +150,7 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
           await video.play();
           setIsInitializingCamera(false);
           setStep(1);
+          markCalibrationStarted();
 
           let lastVideoTime = -1;
           const loop = () => {
