@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, LayoutGrid } from "lucide-react";
 import { motion } from "framer-motion";
@@ -47,18 +47,18 @@ const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     title: "Dia a Dia",
     cards: [
       { label: "PIZZA", image: foodPizza, phrase: "Quero comer pizza." },
-      { label: "AGUA", image: drinkWater, phrase: "Eu quero beber agua." },
+      { label: "ÁGUA", image: drinkWater, phrase: "Eu quero beber água." },
       { label: "SUCO", image: drinkJuice, phrase: "Eu quero beber suco." },
       { label: "LANCHE", image: foodBurger, phrase: "Quero comer um lanche." },
       { label: "FRUTA", image: foodFruit, phrase: "Quero comer fruta." },
-      { label: "CAFE", image: drinkCoffee, phrase: "Eu quero tomar cafe." },
+      { label: "CAFÉ", image: drinkCoffee, phrase: "Eu quero tomar café." },
     ],
   },
   "necessidades-basicas": {
     title: "Necessidades Basicas",
     cards: [
       { label: "XIXI", image: needPee, phrase: "Quero ir fazer xixi." },
-      { label: "COCO", image: needPoop, phrase: "Quero ir fazer coco." },
+      { label: "COCÔ", image: needPoop, phrase: "Quero ir fazer cocô." },
       { label: "BANHO", image: needBath, phrase: "Quero tomar banho." },
       { label: "CHUVEIRO", image: needShower, phrase: "Quero ir para o chuveiro." },
       { label: "ESCOVAR", image: needBrush, phrase: "Quero escovar os dentes." },
@@ -79,7 +79,7 @@ const CategoryDetail = () => {
 
   const [selectedCardLabel, setSelectedCardLabel] = useState<string | null>(null);
   const [isCompletionDialogOpen, setIsCompletionDialogOpen] = useState(false);
-  const [currentPhrase, setCurrentPhrase] = useState("Selecione um cartao para montar a frase.");
+  const [currentPhrase, setCurrentPhrase] = useState("Selecione um cartão para montar a frase.");
   const speechSupported =
     typeof window !== "undefined" && "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
   const isLikelyIOS = useMemo(() => {

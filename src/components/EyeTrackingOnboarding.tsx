@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 import characterHappy from "@/assets/character-happy.png";
@@ -382,30 +382,30 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
 
   const getAvatarMessage = () => {
     if (step === 0) {
-      if (cameraError) return "Nao foi possivel abrir a camera. Voce pode tentar novamente ou continuar sem calibracao.";
-      if (isInitializingCamera) return "Estamos preparando o teste com camera. Permita o acesso para continuar.";
-      return "Este prototipo testa acessibilidade por olhar para apoiar a comunicacao.";
+      if (cameraError) return "Não foi possivel abrir a câmera. Você pode tentar novamente ou continuar sem calibracao.";
+      if (isInitializingCamera) return "Estamos preparando o teste com câmera. Permita o acesso para continuar.";
+      return "Este protótipo testa acessibilidade por olhar para apoiar a comunicação.";
     }
 
     if (step === 1) {
-      if (!hasDetectedFace) return "Ainda nao vimos seu rosto. Aproxime um pouco o celular e ajuste a luz.";
+      if (!hasDetectedFace) return "Ainda não vimos seu rosto. Aproxime um pouco o celular e ajuste a luz.";
       return "Siga a bolinha azul e segure o olhar ate completar o anel.";
     }
 
     if (step === 2) {
       if (lockedCard !== null) return "Perfeito! Agora olhe para 'Continuar' para ir ao ultimo passo.";
-      return "Teste rapido: fixe o olhar em um cartao ate aparecer o check verde.";
+      return "Teste rápido: fixe o olhar em um cartão ate aparecer o check verde.";
     }
 
-    if (step === 3) return "Tudo pronto. Voce pode comecar a usar.";
+    if (step === 3) return "Tudo pronto. Você pode comecar a usar.";
     return "";
   };
 
   const getPrecisionSummary = () => {
     if (precisionScore === null) return null;
     if (precisionScore >= 85) return "Excelente alinhamento do olhar.";
-    if (precisionScore >= 70) return "Boa precisao para continuar o teste.";
-    return "Precisao moderada. Vale repetir com melhor luz para testar.";
+    if (precisionScore >= 70) return "Boa precisão para continuar o teste.";
+    return "Precisão moderada. Vale repetir com melhor luz para testar.";
   };
 
   const renderAvatar = (avatarSrc: string) => (
@@ -470,18 +470,18 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
 
               <div className="w-full max-w-sm space-y-3">
                 <div className="rounded-2xl border border-primary/20 bg-card/95 px-4 py-3 text-left text-sm text-foreground shadow-sm">
-                  <p className="font-extrabold text-primary mb-1">Sobre este prototipo</p>
-                  <p>1. Estamos testando navegacao por olhar para acessibilidade.</p>
-                  <p>2. A camera e usada somente para estimar para onde voce olha.</p>
-                  <p>3. Nao gravamos nem enviamos video durante este teste.</p>
-                  <p>4. O objetivo e validar se o fluxo fica claro e facil de usar.</p>
+                  <p className="font-extrabold text-primary mb-1">Sobre este protótipo</p>
+                  <p>1. Estamos testando navegação por olhar para acessibilidade.</p>
+                  <p>2. A câmera e usada somente para estimar para onde você olha.</p>
+                  <p>3. Não gravamos nem enviamos video durante este teste.</p>
+                  <p>4. O objetivo e validar se o fluxo fica claro e fácil de usar.</p>
                 </div>
 
                 <div className="rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3 text-left text-xs sm:text-sm text-foreground">
-                  <p className="font-bold text-primary mb-1">Antes de liberar a camera</p>
+                  <p className="font-bold text-primary mb-1">Antes de liberar a câmera</p>
                   <p>- Posicione o rosto no centro e com boa luz.</p>
                   <p>- Segure o celular na altura dos olhos.</p>
-                  <p>- Depois, siga a bolinha azul durante a calibracao.</p>
+                  <p>- Depois, siga a bolinha azul durante a calibração.</p>
                 </div>
 
                 {isInitializingCamera ? (
@@ -493,7 +493,7 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
                     className="w-full px-6 py-3 rounded-2xl bg-primary text-primary-foreground font-extrabold shadow-lg"
                     onClick={() => void startCameraMode()}
                   >
-                    Entendi, iniciar com camera (recomendado)
+                    Entendi, iniciar com câmera (recomendado)
                   </motion.button>
                 )}
 
@@ -504,7 +504,7 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
                     className="w-full px-6 py-3 rounded-2xl border-2 border-primary/30 bg-card text-primary font-extrabold shadow-sm"
                     onClick={skipCalibration}
                   >
-                    Continuar sem calibracao (mouse/touch)
+                    Continuar sem calibração (mouse/touch)
                   </motion.button>
                 )}
 
@@ -619,7 +619,7 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
                   animate={{ opacity: 1, y: 0 }}
                   className="w-full max-w-sm rounded-2xl border border-primary/25 bg-card px-4 py-3 shadow-sm"
                 >
-                  <p className="text-xs font-extrabold uppercase tracking-wider text-primary">Nota de precisao</p>
+                  <p className="text-xs font-extrabold uppercase tracking-wider text-primary">Nota de precisão</p>
                   <p className="mt-1 text-3xl font-black text-foreground">{precisionScore}/100</p>
                   <p className="mt-1 text-sm font-semibold text-foreground">{getPrecisionSummary()}</p>
                 </motion.div>
@@ -636,7 +636,7 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
                 }}
                 onClick={completeOnboarding}
               >
-                <p className="text-primary-foreground font-bold text-lg relative z-10">Comecar a usar</p>
+                <p className="text-primary-foreground font-bold text-lg relative z-10">Começar a usar</p>
                 {lookingAt === "finish-btn" && (
                   <div className="absolute top-0 left-0 h-full bg-black/20 z-0 transition-all duration-75" style={{ width: `${(finishGazeTime / BUTTON_DWELL) * 100}%` }} />
                 )}
