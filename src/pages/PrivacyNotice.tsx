@@ -114,6 +114,22 @@ const PrivacyNotice = () => {
         </section>
 
         <section className="rounded-2xl border border-border bg-card p-4 text-sm text-foreground">
+          <p className="font-extrabold text-primary">Definicoes dos indicadores de navegacao</p>
+          <p className="mt-1">
+            <strong>migrated_to_touch</strong>: troca de controle durante a mesma sessao, de camera para touch.
+          </p>
+          <p className="mt-1">
+            <strong>abandoned_eye_tracking_before_end</strong>: a sessao iniciou com camera, mas terminou sem camera ativa.
+          </p>
+          <p className="mt-1">
+            <strong>used_eye_tracking_until_end</strong>: a sessao terminou com camera ativa.
+          </p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Para leitura operacional no dashboard, voce pode separar "troca camera para touch" de "saida durante calibracao". Exemplo de saida durante calibracao: started_mode = camera, calibration_started = true, calibration_completed = false.
+          </p>
+        </section>
+
+        <section className="rounded-2xl border border-border bg-card p-4 text-sm text-foreground">
           <p className="font-extrabold text-primary">Finalidade e base legal</p>
           <p className="mt-1">Finalidade: medir usabilidade e acessibilidade do fluxo para melhorar o produto.</p>
           <p className="mt-1">Base legal: consentimento para coleta de metricas (art. 7, I da LGPD), com informacoes claras (art. 9).</p>

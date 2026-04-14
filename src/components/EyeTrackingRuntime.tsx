@@ -263,7 +263,7 @@ const EyeTrackingRuntime = () => {
 
       <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[90] rounded-full bg-card/90 border border-border px-4 py-2 text-xs font-bold shadow-md backdrop-blur-sm">
         {errorMsg
-          ? "Camera indisponivel"
+          ? "Câmera indisponível"
           : isLoading
             ? "Iniciando eye tracking..."
             : hasDetectedFace

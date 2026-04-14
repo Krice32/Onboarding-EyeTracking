@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+﻿import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { LayoutGrid, ScanEye, Sparkles } from "lucide-react";
@@ -98,7 +98,7 @@ const Index = () => {
             <div className="flex items-center justify-between gap-3">
               <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1.5 text-[11px] font-extrabold uppercase tracking-wider text-primary">
                 <ScanEye className="w-3.5 h-3.5" />
-                Comunicacao Assistiva
+                Comunicação Assistiva
               </div>
               <Sparkles className="w-5 h-5 text-accent" />
             </div>
@@ -123,8 +123,8 @@ const Index = () => {
 
             <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-left text-xs sm:text-sm text-foreground">
               <p className="font-extrabold text-primary">Como vamos testar</p>
-              <p>Voce pode calibrar o Eye Tracking agora, ou entrar sem calibracao usando mouse/touch.</p>
-              <p>A primeira calibracao leva em torno de 2 a 3 minutos.</p>
+              <p>Você pode calibrar o Eye Tracking agora, ou entrar sem calibração usando mouse/touch.</p>
+              <p>A primeira calibração leva em torno de 2 a 3 minutos.</p>
             </div>
 
             <motion.button
@@ -136,7 +136,7 @@ const Index = () => {
                 setScreen("calibration");
               }}
             >
-              Fazer calibracao de Eye Tracking
+              Fazer calibração de Eye Tracking
             </motion.button>
 
             <motion.button
@@ -149,7 +149,7 @@ const Index = () => {
                 setScreen("app");
               }}
             >
-              Iniciar sem calibracao (mouse/touch)
+              Iniciar sem calibração (mouse/touch)
             </motion.button>
 
             {hasCalibratedEyeTracking && (
@@ -199,13 +199,13 @@ const Index = () => {
       items: [
         {
           title: "Dia a Dia",
-          description: "Acoes para expressar necessidades",
+          description: "Ações para expressar necessidades",
           image: characterThumbsup,
           color: "bg-category-dia",
           path: "/categoria/dia-a-dia",
         },
         {
-          title: "Necessidades Basicas",
+          title: "Necessidades Básicas",
           description: "Banho, banheiro e autocuidado",
           image: characterSmile,
           color: "bg-category-necessidades",
@@ -217,14 +217,14 @@ const Index = () => {
       section: "Pessoal",
       items: [
         {
-          title: "Emocoes",
+          title: "Emoções",
           description: "Expressar sentimentos",
           image: characterHappy,
           color: "bg-category-emocoes",
         },
         {
-          title: "Meus Cartoes",
-          description: "Cartoes personalizados",
+          title: "Meus Cartões",
+          description: "Cartões personalizados",
           image: characterWave,
           color: "bg-category-pessoal",
           locked: true,
@@ -273,7 +273,7 @@ const Index = () => {
                     ? "Ativo. Toque para desativar e continuar no mouse/touch."
                     : hasCalibratedEyeTracking
                       ? "Desativado. Toque para ativar novamente."
-                      : "Desativado. Primeira ativacao leva de 2 a 3 min."}
+                      : "Desativado. Primeira ativação leva de 2 a 3 min."}
                 </p>
               </div>
             </div>

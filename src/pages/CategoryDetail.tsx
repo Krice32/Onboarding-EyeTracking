@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, LayoutGrid } from "lucide-react";
 import { motion } from "framer-motion";
@@ -82,11 +82,19 @@ const CategoryDetail = () => {
   const [currentPhrase, setCurrentPhrase] = useState("Selecione um cartao para montar a frase.");
   const speechSupported =
     typeof window !== "undefined" && "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+  const isLikelyIOS = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    const ua = window.navigator.userAgent;
+    const platform = window.navigator.platform;
+    const maxTouchPoints = window.navigator.maxTouchPoints ?? 0;
+    return /iPad|iPhone|iPod/i.test(ua) || (platform === "MacIntel" && maxTouchPoints > 1);
+  }, []);
   const repeatCooldownByCardRef = useRef<Record<string, number>>({});
   const speechSessionRef = useRef(0);
   const activeSpeechRef = useRef<{ session: number; label: string } | null>(null);
   const hasUnlockedSpeechRef = useRef(false);
   const pendingPhraseRef = useRef<string | null>(null);
+  const delayedSpeakRef = useRef<number | null>(null);
   const localTaskCompletedRef = useRef(false);
 
   const findPreferredVoice = useCallback(() => {
@@ -107,6 +115,27 @@ const CategoryDetail = () => {
     setSelectedCardLabel(null);
     repeatCooldownByCardRef.current[cardLabel] = Date.now() + REPEAT_COOLDOWN_MS;
   }, []);
+
+  const queueSpeak = useCallback(
+    (utterance: SpeechSynthesisUtterance) => {
+      window.speechSynthesis.resume();
+      window.speechSynthesis.cancel();
+
+      if (isLikelyIOS) {
+        if (delayedSpeakRef.current) {
+          window.clearTimeout(delayedSpeakRef.current);
+        }
+        delayedSpeakRef.current = window.setTimeout(() => {
+          window.speechSynthesis.speak(utterance);
+          delayedSpeakRef.current = null;
+        }, 40);
+        return;
+      }
+
+      window.speechSynthesis.speak(utterance);
+    },
+    [isLikelyIOS]
+  );
 
   const speakCardPhrase = useCallback(
     (card: CommCard) => {
@@ -146,10 +175,10 @@ const CategoryDetail = () => {
         utterance.voice = preferredVoice;
       }
 
-      window.speechSynthesis.resume();
       const session = speechSessionRef.current + 1;
       speechSessionRef.current = session;
       activeSpeechRef.current = { session, label: card.label };
+      pendingPhraseRef.current = card.phrase;
 
       utterance.onend = () => {
         pendingPhraseRef.current = null;
@@ -162,10 +191,9 @@ const CategoryDetail = () => {
         handleSpeechFinished(session, card.label);
       };
 
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(utterance);
+      queueSpeak(utterance);
     },
-    [consumeFeedbackPrompt, findPreferredVoice, handleSpeechFinished, isAnyCardTask, recordSelection, speechSupported]
+    [consumeFeedbackPrompt, findPreferredVoice, handleSpeechFinished, isAnyCardTask, queueSpeak, recordSelection, speechSupported]
   );
 
   useEffect(() => {
@@ -192,20 +220,30 @@ const CategoryDetail = () => {
 
       const unlockUtterance = new SpeechSynthesisUtterance("ok");
       unlockUtterance.lang = "pt-BR";
-      unlockUtterance.volume = 0;
-      window.speechSynthesis.speak(unlockUtterance);
-      window.speechSynthesis.cancel();
-      hasUnlockedSpeechRef.current = true;
+      unlockUtterance.volume = 0.01;
+      unlockUtterance.onstart = () => {
+        hasUnlockedSpeechRef.current = true;
+      };
+      unlockUtterance.onend = () => {
+        hasUnlockedSpeechRef.current = true;
 
-      if (pendingPhraseRef.current) {
-        const replayUtterance = new SpeechSynthesisUtterance(pendingPhraseRef.current);
+        if (!pendingPhraseRef.current) return;
+
+        const replayText = pendingPhraseRef.current;
+        const preferredVoice = findPreferredVoice();
+        const replayUtterance = new SpeechSynthesisUtterance(replayText);
         replayUtterance.lang = "pt-BR";
         replayUtterance.rate = 0.95;
         replayUtterance.pitch = 1;
         replayUtterance.volume = 1;
-        window.speechSynthesis.speak(replayUtterance);
+        if (preferredVoice) {
+          replayUtterance.voice = preferredVoice;
+        }
         pendingPhraseRef.current = null;
-      }
+        queueSpeak(replayUtterance);
+      };
+
+      queueSpeak(unlockUtterance);
     };
 
     const handleVoicesChanged = () => {
@@ -213,21 +251,27 @@ const CategoryDetail = () => {
     };
 
     window.speechSynthesis.getVoices();
-    unlockSpeech();
     window.addEventListener("pointerdown", unlockSpeech);
     window.addEventListener("touchstart", unlockSpeech);
+    window.addEventListener("touchend", unlockSpeech);
     window.addEventListener("click", unlockSpeech);
+    window.addEventListener("keydown", unlockSpeech);
     window.speechSynthesis.addEventListener("voiceschanged", handleVoicesChanged);
     return () => {
+      if (delayedSpeakRef.current) {
+        window.clearTimeout(delayedSpeakRef.current);
+      }
       window.speechSynthesis.cancel();
       activeSpeechRef.current = null;
       pendingPhraseRef.current = null;
       window.removeEventListener("pointerdown", unlockSpeech);
       window.removeEventListener("touchstart", unlockSpeech);
+      window.removeEventListener("touchend", unlockSpeech);
       window.removeEventListener("click", unlockSpeech);
+      window.removeEventListener("keydown", unlockSpeech);
       window.speechSynthesis.removeEventListener("voiceschanged", handleVoicesChanged);
     };
-  }, [speechSupported]);
+  }, [findPreferredVoice, queueSpeak, speechSupported]);
 
   const handleGoBack = () => {
     if (window.history.length > 1) {
@@ -324,4 +368,3 @@ const CategoryDetail = () => {
 };
 
 export default CategoryDetail;
-

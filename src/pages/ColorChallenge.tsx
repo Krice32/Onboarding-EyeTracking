@@ -77,9 +77,17 @@ const ColorChallenge = () => {
 
   const speechSupported =
     typeof window !== "undefined" && "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+  const isLikelyIOS = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    const ua = window.navigator.userAgent;
+    const platform = window.navigator.platform;
+    const maxTouchPoints = window.navigator.maxTouchPoints ?? 0;
+    return /iPad|iPhone|iPod/i.test(ua) || (platform === "MacIntel" && maxTouchPoints > 1);
+  }, []);
   const hasUnlockedSpeechRef = useRef(false);
   const pendingSpeechRef = useRef<string | null>(null);
   const roundTimeoutRef = useRef<number | null>(null);
+  const delayedSpeakRef = useRef<number | null>(null);
 
   const mascotMessage = useMemo(() => {
     if (isFinished) {
@@ -95,6 +103,27 @@ const ColorChallenge = () => {
     const voices = window.speechSynthesis.getVoices();
     return voices.find((voice) => voice.lang.toLowerCase().startsWith("pt-br")) ?? voices.find((voice) => voice.lang.toLowerCase().startsWith("pt")) ?? null;
   }, [speechSupported]);
+
+  const queueSpeak = useCallback(
+    (utterance: SpeechSynthesisUtterance) => {
+      window.speechSynthesis.resume();
+      window.speechSynthesis.cancel();
+
+      if (isLikelyIOS) {
+        if (delayedSpeakRef.current) {
+          window.clearTimeout(delayedSpeakRef.current);
+        }
+        delayedSpeakRef.current = window.setTimeout(() => {
+          window.speechSynthesis.speak(utterance);
+          delayedSpeakRef.current = null;
+        }, 40);
+        return;
+      }
+
+      window.speechSynthesis.speak(utterance);
+    },
+    [isLikelyIOS]
+  );
 
   const speak = useCallback(
     (text: string) => {
@@ -123,24 +152,32 @@ const ColorChallenge = () => {
         }
       };
 
-      window.speechSynthesis.resume();
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(utterance);
+      pendingSpeechRef.current = text;
+      queueSpeak(utterance);
     },
-    [getPreferredVoice, speechSupported]
+    [getPreferredVoice, queueSpeak, speechSupported]
   );
 
   const unlockSpeech = useCallback(() => {
     if (!speechSupported) return;
     if (hasUnlockedSpeechRef.current && !pendingSpeechRef.current) return;
-    hasUnlockedSpeechRef.current = true;
-    window.speechSynthesis.resume();
 
-    if (pendingSpeechRef.current) {
-      const replay = pendingSpeechRef.current;
-      speak(replay);
-    }
-  }, [speak, speechSupported]);
+    const unlockUtterance = new SpeechSynthesisUtterance("ok");
+    unlockUtterance.lang = "pt-BR";
+    unlockUtterance.volume = 0.01;
+    unlockUtterance.onstart = () => {
+      hasUnlockedSpeechRef.current = true;
+    };
+    unlockUtterance.onend = () => {
+      hasUnlockedSpeechRef.current = true;
+      if (pendingSpeechRef.current) {
+        const replay = pendingSpeechRef.current;
+        speak(replay);
+      }
+    };
+
+    queueSpeak(unlockUtterance);
+  }, [queueSpeak, speak, speechSupported]);
 
   const announceRound = useCallback(() => {
     const prompt = `Rodada ${roundNumber}. Qual e a cor ${round.questionColor.label.toLowerCase()}?`;
@@ -255,13 +292,17 @@ const ColorChallenge = () => {
 
     window.addEventListener("pointerdown", unlockSpeech);
     window.addEventListener("touchstart", unlockSpeech);
+    window.addEventListener("touchend", unlockSpeech);
     window.addEventListener("click", unlockSpeech);
+    window.addEventListener("keydown", unlockSpeech);
     window.speechSynthesis.addEventListener("voiceschanged", handleVoicesChanged);
 
     return () => {
       window.removeEventListener("pointerdown", unlockSpeech);
       window.removeEventListener("touchstart", unlockSpeech);
+      window.removeEventListener("touchend", unlockSpeech);
       window.removeEventListener("click", unlockSpeech);
+      window.removeEventListener("keydown", unlockSpeech);
       window.speechSynthesis.removeEventListener("voiceschanged", handleVoicesChanged);
     };
   }, [speechSupported, unlockSpeech]);
@@ -270,6 +311,10 @@ const ColorChallenge = () => {
     return () => {
       if (roundTimeoutRef.current) {
         window.clearTimeout(roundTimeoutRef.current);
+      }
+
+      if (delayedSpeakRef.current) {
+        window.clearTimeout(delayedSpeakRef.current);
       }
 
       if (speechSupported) {

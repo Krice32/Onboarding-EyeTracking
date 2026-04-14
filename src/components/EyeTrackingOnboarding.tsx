@@ -30,7 +30,7 @@ const CARD_DWELL = 1200;
 const BUTTON_DWELL = 1500;
 
 const EyeTrackingOnboarding = ({ onComplete }: Props) => {
-  const { startSession, markCalibrationStarted, markCalibrationCompleted } = useTelemetry();
+  const { startSession, markCalibrationStarted, markCalibrationCompleted, markNavigationStarted } = useTelemetry();
   const [step, setStep] = useState(0);
   const [activeDot, setActiveDot] = useState(0);
   const [dotsCompleted, setDotsCompleted] = useState<number[]>([]);
@@ -107,6 +107,15 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
   }, [markCalibrationCompleted, onComplete, stopCameraTracking, trackingMode]);
 
   const startCameraMode = useCallback(async () => {
+    if (typeof window !== "undefined" && "speechSynthesis" in window && "SpeechSynthesisUtterance" in window) {
+      const primer = new SpeechSynthesisUtterance("ok");
+      primer.lang = "pt-BR";
+      primer.volume = 0;
+      window.speechSynthesis.resume();
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(primer);
+    }
+
     startSession();
     stopCameraTracking();
     setIsInitializingCamera(true);
@@ -150,6 +159,7 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
           await video.play();
           setIsInitializingCamera(false);
           setStep(1);
+          markNavigationStarted("camera");
           markCalibrationStarted();
 
           let lastVideoTime = -1;
@@ -228,7 +238,7 @@ const EyeTrackingOnboarding = ({ onComplete }: Props) => {
       setIsInitializingCamera(false);
       stopCameraTracking();
     }
-  }, [markCalibrationStarted, startSession, stopCameraTracking]);
+  }, [markCalibrationStarted, markNavigationStarted, startSession, stopCameraTracking]);
 
   useEffect(() => {
     return () => {

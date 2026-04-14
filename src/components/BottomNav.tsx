@@ -5,7 +5,7 @@ const navItems = [
   { icon: Home, label: "Principal", path: "/?screen=app" },
   { icon: Image, label: "Fotos Reais" },
   { icon: LayoutGrid, label: "Explorar", path: "/explorar" },
-  { icon: Images, label: "Meus Cartoes" },
+  { icon: Images, label: "Meus Cartões" },
   { icon: Users, label: "Pais" },
 ];
 

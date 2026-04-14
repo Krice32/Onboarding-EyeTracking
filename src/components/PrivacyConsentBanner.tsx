@@ -11,7 +11,7 @@ const PrivacyConsentBanner = () => {
       <p className="text-sm font-semibold text-foreground">
         Coletamos metricas de navegacao para melhorar a acessibilidade (tempo de tarefa, erros e modo de uso), sem gravar ou enviar video da camera.
       </p>
-      <p className="mt-1 text-xs text-muted-foreground">Voce pode aceitar ou recusar essa coleta. O app continua funcionando mesmo se recusar.</p>
+      <p className="mt-1 text-xs text-muted-foreground">Você pode aceitar ou recusar essa coleta. O app continua funcionando mesmo se recusar.</p>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <button
